@@ -1,0 +1,97 @@
+
+component provides matmul.Matmul requires data.IntUtil iu, data.StringUtil su, io.Output out {
+    Line Matmul:calcLine(Line line, Matrix B) {
+        int newLine[] = new int[]()
+        int columnSize = B.lines[0].line.arrayLength
+
+        for(int i=0; i < columnSize; i++) {
+            int acc = 0
+
+            for(int j=0;j<line.line.arrayLength; j++) acc += (line.line[j] * B.lines[j].line[i])
+
+            newLine = new int[](newLine, acc)
+        }
+
+        return new Line(newLine)
+    }
+
+    Matrix Matmul:multiply(Matrix A, Matrix B) {
+        Matrix resultMatrix = new Matrix()
+
+        for(int i=0; i < A.lines.arrayLength; i++) {
+            resultMatrix.lines = new Line[](resultMatrix.lines, calcLine(A.lines[i], B))
+        }
+        
+        return resultMatrix
+    }
+   
+    char[] Matmul:matrixToChar(Matrix matrix) {
+        char result[] = new char[]("[")
+
+        for(int i=0; i < matrix.lines.arrayLength; i++) {
+            result = new char[](result, "[")
+            int currentLine[] = matrix.lines[i].line
+
+            for(int j=0; j<currentLine.arrayLength; j++) {
+                if (j == currentLine.arrayLength - 1) result = new char[](result, iu.makeString(currentLine[j]))
+                else result = new char[](result, iu.makeString(currentLine[j]), ",")
+            }
+
+            if (i == matrix.lines.arrayLength - 1) result = new char[](result, "]")
+            else result = new char[](result, "],")
+        }
+
+        result = new char[](result, "]")
+        return result
+    }
+
+    char[] Matmul:lineToChar(int line[]) {
+        char result[] = new char[]("[")
+
+        for(int i=0; i<line.arrayLength; i++) {
+            if (i == line.arrayLength - 1) result = new char[](result, iu.makeString(line[i]))
+            else result = new char[](result, iu.makeString(line[i]), ",")
+        }
+
+        result = new char[](result, "]")
+        return result
+    }
+
+    Matrix Matmul:charToMatrix(char matrixChar[]) {
+        String linesChar[] = null
+        Matrix resultMatrix = new Matrix()
+        char acc[] = ""
+        bool startRecording = false
+
+        for(int i=1; i < matrixChar.arrayLength - 1; i++) {
+            if(matrixChar[i] == "[") startRecording = true
+            if(startRecording) acc = new char[](acc, matrixChar[i])
+            if(matrixChar[i] == "]") {
+                startRecording = false
+                linesChar = new String[](linesChar, new String(acc))
+                acc = ""
+            }
+        }
+
+        for(int k=0; k < linesChar.arrayLength; k++) {
+            char lineString[] = linesChar[k].string
+            resultMatrix.lines = new Line[](resultMatrix.lines, charToLine(lineString))
+        }
+
+
+        return resultMatrix
+    }
+
+    
+    Line Matmul:charToLine(char lineString[]) {
+        char onlyNumbers[] = su.subString(lineString, 1, lineString.arrayLength - 2)
+        String lineStrings[] = su.explode(onlyNumbers, ",")
+
+        int lineIntAcc[] = new int[]()
+        for(int j=0; j < lineStrings.arrayLength; j++) {
+            lineIntAcc = new int[](lineIntAcc, iu.intFromString(su.trim(lineStrings[j].string)))
+        }
+
+        return new Line(lineIntAcc)
+    }
+}

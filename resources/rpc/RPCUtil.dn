@@ -1,0 +1,34 @@
+uses net.TCPSocket
+
+data Address {
+    char name[]
+    int port
+}
+
+data Metadata {
+    char name[]
+    char value[]
+}
+
+data TransactionData {
+    char name[]
+    char value[]
+}
+
+data Request {
+    Metadata meta[]
+    char content[]
+}
+
+data Response {
+    Metadata meta[]
+    char content[]
+}
+
+interface RPCUtil {
+    bool connect(Address a)
+    Response make(Request r)
+    Request parseRequestFromString(char requestString[])
+    char[] receiveData(TCPSocket s)
+    char[] buildRawResponse(Response r)
+}

@@ -1,0 +1,66 @@
+{
+	"outputFolder": "./matmul",
+    "componentFile": "./matmul/Matmul.dn",
+    "dependencies": [
+        { "lib": "rpc.RPCUtil", "alias": "connection" },
+        { "lib": "data.IntUtil", "alias": "iu" },
+        { "lib": "data.json.JSONEncoder", "alias": "je" },
+        { "lib": "data.StringUtil", "alias": "su" }
+    ],
+    "remotes": [
+        { "address": "localhost", "port": 8081 },
+        { "address": "localhost", "port": 8082 }
+    ],
+    "attributes": {},
+	"methods": {
+        "calcLine": {
+            "returnType": "Line",
+            "strategy": "distribute",
+            "returnParser": "charToLine({})",
+            "parameters": [
+                {"name": "line", "type": "Line", "useFormat": "line.line", "stringParser": "lineToChar({})"},
+                {"name": "B", "type": "Matrix",  "stringParser": "matrixToChar({})"}
+            ]
+        },
+        "multiply": {
+            "returnType": "Matrix",
+            "strategy": "distribute",
+            "returnParser": "charToMatrix({})",
+            "parameters": [
+                {"name": "A", "type": "Matrix", "stringParser": "matrixToChar({})"},
+                {"name": "B", "type": "Matrix", "stringParser": "matrixToChar({})"}
+            ],
+            "combineArgumentsOn": "MatmulFormat"
+        },
+        "matrixToChar": {
+            "returnType": "char[]",
+            "strategy": "local",
+            "parameters": [
+                {"name": "matrix", "type": "Matrix"}
+            ]
+        },
+        "lineToChar": {
+            "returnType": "char[]",
+            "strategy": "local",
+            "parameters": [
+                {"name": "line", "type": "int[]"}
+            ]
+        },
+        "charToMatrix": {
+            "returnType": "Matrix",
+            "strategy": "local",
+            "parameters": [
+                {"name": "matrixChar", "type": "char[]"}
+            ]
+        },
+        "charToLine": {
+            "returnType": "Line",
+            "strategy": "local",
+            "parameters": [
+                {"name": "lineString", "type": "char[]"}
+            ]
+        }
+    },
+    "onActive": [],
+    "onInactive": []
+}

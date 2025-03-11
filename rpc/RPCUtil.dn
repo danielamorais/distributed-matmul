@@ -1,0 +1,73 @@
+const char debugMSG[] = "[@RPCUtil]"
+
+component provides RPCUtil requires data.json.JSONEncoder je, net.TCPSocket, io.Output out,
+    data.IntUtil iu, data.StringUtil su, Constants {
+    TCPSocket connectionSocket = null
+
+    bool RPCUtil:connect(Address a) {
+        connectionSocket = new TCPSocket()
+        return connectionSocket.connect(a.name, a.port)
+    }
+
+    Response RPCUtil:make(Request req) {
+        Response r = null
+        char requestContent[] = null
+
+        if (req.content != null) {
+            requestContent = new char[](
+                je.jsonFromArray(req.meta),
+                Constants.SEPARATOR,
+                req.content
+            )
+            out.println("$debugMSG - raw request - $requestContent")
+        } else {
+            requestContent = je.jsonFromArray(req.meta)
+        }
+        
+        requestContent = new char[](requestContent, Constants.EOF)
+        connectionSocket.send(requestContent)
+        char responseContent[] = receiveData(connectionSocket)
+        String json[] = su.explode(responseContent, Constants.SEPARATOR)
+        Metadata meta[] = je.jsonToArray(json[0].string, typeof(Metadata[]))
+        if(json.arrayLength > 1) r = new Response(meta, json[1].string)
+        else r = new Response(meta)
+        connectionSocket.disconnect()
+        return r
+    }
+
+    char[] RPCUtil:receiveData(TCPSocket s) {
+        char buf[] = null
+        char body[] = null
+		int stopCounter = 0
+        while ((buf = s.recv(1)).arrayLength > 0) {
+            body = new char[](body, buf)
+			if(buf == "\r") stopCounter++
+			else stopCounter = 0
+			if(body.arrayLength >= 4 && stopCounter == 4) break
+		}
+        return su.rtrim(body)
+    }
+
+
+    
+    Request RPCUtil:parseRequestFromString(char requestString[]) {
+        Request r = null
+        String json[] = su.explode(requestString, Constants.SEPARATOR)
+        Metadata meta[] = je.jsonToArray(json[0].string, typeof(Metadata[]))
+
+        if(json.arrayLength > 1) {
+            r = new Request(meta, json[1].string)
+        } else {
+            r = new Request(meta)
+        }
+
+        return r
+    }
+
+    
+    char[] RPCUtil:buildRawResponse(Response res) {
+        if(res.content == null) return new char[](je.jsonFromArray(res.meta), Constants.EOF)
+        else return new char[](je.jsonFromArray(res.meta), Constants.SEPARATOR, res.content, Constants.EOF)
+    }
+
+}

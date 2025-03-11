@@ -1,0 +1,27 @@
+
+data Line {
+    int line[]
+}
+
+data Matrix {
+    Line lines[]
+}
+
+data MultiplyParamsFormat {
+    char A[]
+    char B[]
+}
+
+data CalcLineParamsFormat {
+    char line[]
+    char B[]
+}
+
+interface Matmul {
+    Line calcLine(Line line, Matrix B)
+    Matrix multiply(Matrix A, Matrix B)
+    Matrix charToMatrix(char matrixChar[])
+    Line charToLine(char lineString[])
+    char[] matrixToChar(Matrix matrix)
+    char[] lineToChar(int line[])
+}

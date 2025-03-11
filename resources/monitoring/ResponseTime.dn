@@ -1,0 +1,6 @@
+interface ResponseTime {
+    void markStartTime()
+    void markFinishTime()
+    void clearTime()
+    int getResult()
+}

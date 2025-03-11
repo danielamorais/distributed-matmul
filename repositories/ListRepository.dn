@@ -1,0 +1,22 @@
+const char debugMSG[] = "[@ListRepository]"
+
+component provides repositories.ListRepository requires io.Output out {
+    void ListRepository:add(store Node n) {
+        list = new Node[](list, n)
+        index++
+    }
+
+    void ListRepository:clear() {
+        list = new Node[]()
+        index = 0
+    }
+
+    Node[] ListRepository:getAll() {
+        return list
+    }
+
+    int ListRepository:size() {
+        return index
+    }
+
+}

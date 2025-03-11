@@ -1,0 +1,20 @@
+
+component provides monitoring.ResponseTime requires time.Calendar ic, time.DateUtil dateUtil {
+    DateTime startTime
+    DateTime finishTime
+	
+    void ResponseTime:markStartTime() {	startTime = ic.getTime() }
+
+	void ResponseTime:markFinishTime() { finishTime = ic.getTime() }
+    
+	void ResponseTime:clearTime() {
+        startTime = null
+        finishTime = null
+    }
+
+	int ResponseTime:getResult() {
+		if ((startTime != null) && (finishTime != null))
+			return dateUtil.toMilliseconds(dateUtil.diff(startTime, finishTime))
+		return 0
+	}
+}

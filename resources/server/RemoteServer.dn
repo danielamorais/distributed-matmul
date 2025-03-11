@@ -1,0 +1,12 @@
+uses net.TCPSocket
+uses repositories.ListRepository
+
+data Param {
+    char value[]
+    char key[]
+}
+
+interface RemoteServer {
+    void start(int port)
+    void handleRequest(TCPSocket s)
+}

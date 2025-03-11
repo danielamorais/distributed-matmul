@@ -1,0 +1,95 @@
+uses server.MatmulController
+
+const char debugMSG[] = "[@Server]"
+
+component provides server.Server requires io.Output out, http.HTTPUtil httpUtil, data.IntUtil iu,
+    net.TCPServerSocket, net.TCPSocket, composition.Adapt adapter, composition.RecursiveLoader loader,
+    monitoring.ResponseTime rt {
+    bool adaptation = false
+    MatmulController mc
+    LoadedComponents matmul = loader.load("matmul/Matmul.o")
+    LoadedComponents matmulProxy = loader.load("matmul/Matmul.proxy.o")
+    LoadedComponents matmulController = loader.load("server/MatmulController.o")
+
+    void Server:init() {
+        TCPServerSocket host = new TCPServerSocket()
+        int port = 8080
+
+        matmulController.mainComponent.wire("matmul.Matmul", matmul.mainComponent, "matmul.Matmul")
+        mc = new MatmulController() from matmulController.mainComponent
+        
+        // binding server socket
+		if (!host.bind(TCPServerSocket.ANY_ADDRESS, port)) {
+			out.println("Error: failed to bind master socket")
+			return
+		}
+
+        out.println("\n$debugMSG - Server is up and running...")
+        out.print("option> ")
+
+		// handling incoming requests
+		while (true) {
+			TCPSocket client = new TCPSocket()
+			if (client.accept(host)) handleRequest(client)
+		}
+    }
+
+    void Server:adaptRepository(opt bool useProxy) {
+        rt.markStartTime()
+        if(isset useProxy && useProxy) adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmulProxy.mainComponent)
+        else adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmul.mainComponent)
+        rt.markFinishTime()
+        out.println("[SERVER] - adaptation time: $(iu.makeString(rt.getResult()))")
+        rt.clearTime()
+    }
+
+    void Server:handleRequest(store TCPSocket client) {
+        out.println("\n============= REQUEST START ===========")
+        HTTPMessage msg = httpUtil.readHTTPRequest(client)
+        rt.markStartTime()
+        process(msg)
+        rt.markFinishTime()
+        out.println("[SERVER] - response time: $(iu.makeString(rt.getResult()))")
+        out.println("============= REQUEST END   ===========")
+        rt.clearTime()
+        out.print("option> ")
+    }
+    
+    void Server:process(HTTPMessage request) {
+        Response res = null
+        res = mc.handle(request)
+        if (res != null) sendResponse(request, res)
+        else sendResponse(request, build404(request))
+    }
+
+    Response build404(HTTPMessage request) {
+        return new Response(
+            404,
+            "Not Found",
+            HTTPUtil.SERVER_NAME,
+            0,
+            request.mimeType,
+            ""
+        )
+    }
+
+    void Server:sendResponse(HTTPMessage request, Response response) {
+        // out.println("$debugMSG - RESPONSE CONTENT")
+        request.socket.send("HTTP/1.1 $(iu.makeString(response.code)) $(response.status)\r\n")
+        // out.print("HTTP/1.1 $(iu.makeString(response.code)) $(response.status)\r\n")
+		request.socket.send("Server: $(response.serverName) \r\n")
+        // out.print("Server: $(response.serverName) \r\n")
+		request.socket.send("Content-Length: $(iu.makeString(response.contentLength))\r\n")
+        // out.print("Content-Length: $(iu.makeString(response.contentLength))\r\n")
+		request.socket.send("Connection: close\r\n")
+        // out.print("Connection: close\r\n")
+		request.socket.send("Content-Type: $(response.contentType)\r\n")
+        // out.print("Content-Type: $(response.contentType)\r\n")
+		request.socket.send("\r\n")
+        // out.print("\r\n")
+		request.socket.send(response.body)
+        // out.println(response.body)
+        // out.println("$debugMSG - END RESPONSE CONTENT")
+    }
+
+}

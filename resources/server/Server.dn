@@ -1,0 +1,18 @@
+uses http.HTTPUtil
+uses adapter.Adapter
+
+data Response {
+    int code
+    char status[]
+    char serverName[]
+    int contentLength
+    char contentType[]
+    char body[]
+}
+
+interface Server extends Adapter {
+    void init()
+    void process(HTTPMessage request)
+    void sendResponse(HTTPMessage request, Response response)
+    void handleRequest(store TCPSocket client)
+}
