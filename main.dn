@@ -20,12 +20,17 @@ component provides App requires server.Server server, io.Input in, io.Output out
     }
     
     int App:main(AppParam params[]) {
-        int instruction = 0
-        while(instruction != 3) {
-            asynch::processOption(instruction)
-            printOptions()
-            char userInput[] = in.readln()
-            instruction = iu.intFromString(userInput)
+        if(params.arrayLength > 0) {
+            server.init()
+            server.adaptRepository(true)
+        } else {
+            int instruction = 0
+            while(instruction != 3) {
+                asynch::processOption(instruction)
+                printOptions()
+                char userInput[] = in.readln()
+                instruction = iu.intFromString(userInput)
+            }
         }
         
         return 0

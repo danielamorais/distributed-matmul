@@ -1,0 +1,35 @@
+# Usando uma imagem base do Ubuntu
+FROM ubuntu:latest
+
+# Atualiza o índice de pacotes e instala dependências necessárias (curl e unzip)
+RUN apt-get update && apt-get install -y curl unzip python3
+
+RUN mkdir -p /dana
+
+# Baixa o arquivo ZIP
+RUN curl -k -o dana.zip https://www.projectdana.com/download/ubu_x86-64
+
+# Descompacta o arquivo ZIP
+RUN unzip dana.zip -d /dana
+
+ENV DANA_HOME="/dana"
+
+# Adiciona a pasta "dana" ao PATH do container
+ENV PATH="/dana:${PATH}"
+
+RUN chmod +x /dana/dana
+RUN chmod +x /dana/dnc
+
+# Define o diretório de trabalho dentro do contêiner
+WORKDIR /app
+
+# Concede permissão de execução ao executável "dana"
+COPY . .
+
+RUN chmod +x /app/compile.sh
+RUN chmod +x /app/run-main.sh
+
+RUN /app/compile.sh
+
+# Define um comando padrão para interagir com o container
+CMD ["/app/run-main.sh"]

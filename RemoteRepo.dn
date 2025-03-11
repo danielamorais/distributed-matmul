@@ -13,7 +13,7 @@ component provides App requires io.Input in, io.Output out, data.IntUtil iu,
 		} else {
 			portDist = DEFAULT_DIST_PORT
 			portApp = DEFAULT_APP_PORT
-		}
+		} 
 		
 		server.start(portDist)
 
