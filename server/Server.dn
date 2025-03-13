@@ -11,6 +11,30 @@ component provides server.Server requires io.Output out, http.HTTPUtil httpUtil,
     LoadedComponents matmulProxy = loader.load("matmul/Matmul.proxy.o")
     LoadedComponents matmulController = loader.load("server/MatmulController.o")
 
+    void Server:initWithProxy() {
+        TCPServerSocket host = new TCPServerSocket()
+        int port = 8080
+
+        matmulController.mainComponent.wire("matmul.Matmul", matmulProxy.mainComponent, "matmul.Matmul")
+        mc = new MatmulController() from matmulController.mainComponent
+        adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmulProxy.mainComponent)
+        
+        // binding server socket
+		if (!host.bind(TCPServerSocket.ANY_ADDRESS, port)) {
+			out.println("Error: failed to bind master socket")
+			return
+		}
+
+        out.println("\n$debugMSG - Server is up and running...")
+        // out.print("option> ")
+
+		// handling incoming requests
+		while (true) {
+			TCPSocket client = new TCPSocket()
+			if (client.accept(host)) handleRequest(client)
+		}
+    }
+
     void Server:init() {
         TCPServerSocket host = new TCPServerSocket()
         int port = 8080
@@ -25,7 +49,7 @@ component provides server.Server requires io.Output out, http.HTTPUtil httpUtil,
 		}
 
         out.println("\n$debugMSG - Server is up and running...")
-        out.print("option> ")
+        // out.print("option> ")
 
 		// handling incoming requests
 		while (true) {
@@ -39,20 +63,20 @@ component provides server.Server requires io.Output out, http.HTTPUtil httpUtil,
         if(isset useProxy && useProxy) adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmulProxy.mainComponent)
         else adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmul.mainComponent)
         rt.markFinishTime()
-        out.println("[SERVER] - adaptation time: $(iu.makeString(rt.getResult()))")
+        // out.println("[SERVER] - adaptation time: $(iu.makeString(rt.getResult()))")
         rt.clearTime()
     }
 
     void Server:handleRequest(store TCPSocket client) {
-        out.println("\n============= REQUEST START ===========")
+        // out.println("\n============= REQUEST START ===========")
         HTTPMessage msg = httpUtil.readHTTPRequest(client)
         rt.markStartTime()
         process(msg)
         rt.markFinishTime()
-        out.println("[SERVER] - response time: $(iu.makeString(rt.getResult()))")
-        out.println("============= REQUEST END   ===========")
+        // out.println("[SERVER] - response time: $(iu.makeString(rt.getResult()))")
+        // out.println("============= REQUEST END   ===========")
         rt.clearTime()
-        out.print("option> ")
+        // out.print("option> ")
     }
     
     void Server:process(HTTPMessage request) {

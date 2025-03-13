@@ -1,6 +1,6 @@
 
 component provides matmul.Matmul(AdaptEvents) requires rpc.RPCUtil connection, data.IntUtil iu, data.json.JSONEncoder je, data.StringUtil su {
-	Address remotes[] = new Address[](new Address("localhost", 8081),new Address("localhost", 8082))
+	Address remotes[] = new Address[](new Address("dana-remote-1", 8081),new Address("dana-remote-2", 8082))
 	int addressPointer = 0
 	Mutex pointerLock = new Mutex()
 

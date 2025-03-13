@@ -21,8 +21,7 @@ component provides App requires server.Server server, io.Input in, io.Output out
     
     int App:main(AppParam params[]) {
         if(params.arrayLength > 0) {
-            server.init()
-            server.adaptRepository(true)
+            server.initWithProxy()
         } else {
             int instruction = 0
             while(instruction != 3) {

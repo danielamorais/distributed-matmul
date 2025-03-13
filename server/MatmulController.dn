@@ -6,7 +6,7 @@ component provides server.MatmulController requires io.Output out, matmul.Matmul
     const char resource[] = "/matmul"
     
     Response MatmulController:handle(HTTPMessage request) {
-        out.println("$debugMSG - resource requested - $(request.resource)")
+        // out.println("$debugMSG - resource requested - $(request.resource)")
         if(request.resource == resource) {
             if(request.command == "POST") return handlePost(request)
         }
@@ -15,10 +15,10 @@ component provides server.MatmulController requires io.Output out, matmul.Matmul
     }
 
     Response handlePost(HTTPMessage request) {
-        out.println("$debugMSG - method requested - POST")
+        // out.println("$debugMSG - method requested - POST")
         // out.println("$debugMSG - post body - $(request.postData)")
         MultiplyParamsFormat matrixData = je.jsonToData(request.postData, typeof(MultiplyParamsFormat))
-        out.println("$debugMSG - post body - $(je.jsonFromData(matrixData))")
+        // out.println("$debugMSG - post body - $(je.jsonFromData(matrixData))")
         Matrix result = mat.multiply(mat.charToMatrix(matrixData.A), mat.charToMatrix(matrixData.B))
         return buildResponseCode200(mat.matrixToChar(result), request.mimeType)
     }

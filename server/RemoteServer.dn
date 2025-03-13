@@ -27,11 +27,11 @@ component provides server.RemoteServer requires net.TCPSocket, net.TCPServerSock
     void RemoteServer:handleRequest(TCPSocket s) {
         char requestContent[] = rpc.receiveData(s)
         if(requestContent == null) s.disconnect()
-        out.println("$debugMSG - content - $requestContent")
+        // out.println("$debugMSG - content - $requestContent")
         Request req = rpc.parseRequestFromString(requestContent)
         Response res = process(req)
         char rawResponse[] = rpc.buildRawResponse(res)
-        out.println("$debugMSG - response - $rawResponse")
+        // out.println("$debugMSG - response - $rawResponse")
         s.send(rawResponse)
         s.disconnect()
     }

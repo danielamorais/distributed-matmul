@@ -15,7 +15,7 @@ component provides http.HTTPUtil requires io.Output out, data.IntUtil iu, io.Fil
                 (command[len-4] == "\r") && (command[len-3] == "\n") && 
 				(command[len-2] == "\r") && (command[len-1] == "\n")) {
 
-                out.println("$debugMSG - header generated")
+                // out.println("$debugMSG - header generated")
 
                 httpHeader = parseHTTPRequest(command)
                 if (httpHeader != null) { httpHeader.rawHeader = command }
@@ -61,7 +61,7 @@ component provides http.HTTPUtil requires io.Output out, data.IntUtil iu, io.Fil
             )
 		}
 		message.socket = header.socket
-		out.println("$debugMSG - request content length - $(header.contentLength)")
+		// out.println("$debugMSG - request content length - $(header.contentLength)")
 		if (header.contentLength > 0) {
 			message.postData = new char[](header.socket.recv(header.contentLength))
 		}
