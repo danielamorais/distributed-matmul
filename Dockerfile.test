@@ -1,0 +1,14 @@
+FROM locustio/locust:latest
+
+# Cria um diretório específico para resultados
+RUN mkdir -p /home/locust/results && \
+    chown -R locust:locust /home/locust/results
+
+# Copia o arquivo de testes para o container
+COPY testing/locustfile.py /home/locust/locustfile.py
+
+# Define o diretório de trabalho
+WORKDIR /home/locust
+
+# Garante permissões adequadas
+USER locust
