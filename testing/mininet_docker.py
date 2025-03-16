@@ -15,7 +15,7 @@ def create_network():
     remote2 = net.addHost('remote2', cls=Docker, ip='10.0.0.3', dimage="distributed-matmul-dana-remote-2")  # Nome curto
     locust = net.addHost('locust', cls=Docker, ip='10.0.0.4', dimage="distributed-matmul-locust-test")       # Nome curto
     serial = net.addHost('serial', cls=Docker, ip='10.0.0.5', dimage="distributed-matmul-serial-matmul")    # Nome curto
-    locust_serial = net.addHost('locust-serial', cls=Docker, ip='10.0.0.6', dimage="distributed-matmul-locust-test-serial")
+    locust_serial = net.addHost('locust-ser', cls=Docker, ip='10.0.0.6', dimage="distributed-matmul-locust-test-serial")
 
     # Switches
     s1 = net.addSwitch('s1')
