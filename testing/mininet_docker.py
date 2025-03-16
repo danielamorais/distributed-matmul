@@ -12,8 +12,8 @@ def create_network():
 
     # Criação dos hosts Docker
     dana_main = net.addHost('dana-main', cls=Docker, ip='10.0.0.1', dimage="distributed-matmul-dana-main")
-    dana_remote_1 = net.addHost('dana-remote-1', cls=Docker, ip='10.0.0.2', dimage="distributed-matmul-dana-remote-1")
-    dana_remote_2 = net.addHost('dana-remote-2', cls=Docker, ip='10.0.0.3', dimage="distributed-matmul-dana-remote-2")
+    dana_remote_1 = net.addHost('dana-remote-first', cls=Docker, ip='10.0.0.2', dimage="distributed-matmul-dana-remote-1")
+    dana_remote_2 = net.addHost('dana-remote-second', cls=Docker, ip='10.0.0.3', dimage="distributed-matmul-dana-remote-2")
     locust_test = net.addHost('locust-test', cls=Docker, ip='10.0.0.4', dimage="distributed-matmul-locust-test")
     serial_matmul = net.addHost('serial-matmul', cls=Docker, ip='10.0.0.5', dimage="distributed-matmul-serial-matmul")
     locust_test_serial = net.addHost('locust-test-serial', cls=Docker, ip='10.0.0.6', dimage="distributed-matmul-locust-test-serial")
