@@ -28,7 +28,6 @@ def create_network():
     net.addLink(locust, s1, bw=15, delay='2ms', loss=0.5, r2q=500)
     net.addLink(serial, s2, bw=20, delay='20ms', loss=0.1, r2q=500)
     net.addLink(locust_serial, s2, bw=15, delay='2ms', loss=0.5, r2q=500)
-    net.addLink(s1, s2, bw=50, delay='1ms', loss=0.1, r2q=500)
 
     net.start()
     CLI(net)
