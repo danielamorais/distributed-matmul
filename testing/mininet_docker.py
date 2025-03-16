@@ -22,13 +22,13 @@ def create_network():
     s2 = net.addSwitch('s2')
 
     # Links (ajustados para os novos nomes)
-    net.addLink(dana_main, s1, bw=10, delay='6ms', loss=1)
-    net.addLink(remote1, s1, bw=5, delay='1ms', loss=2)  # Nome corrigido: remote1
-    net.addLink(remote2, s1, bw=5, delay='1ms', loss=2)  # Nome corrigido: remote2
-    net.addLink(locust, s1, bw=15, delay='2ms', loss=0.5)
-    net.addLink(serial, s2, bw=20, delay='20ms', loss=0.1)
-    net.addLink(locust_serial, s2, bw=15, delay='2ms', loss=0.5)
-    net.addLink(s1, s2, bw=50, delay='1ms', loss=0.1)
+    net.addLink(dana_main, s1, bw=10, delay='6ms', loss=1, r2q=100)
+    net.addLink(remote1, s1, bw=5, delay='1ms', loss=2, r2q=100)  # Nome corrigido: remote1
+    net.addLink(remote2, s1, bw=5, delay='1ms', loss=2, r2q=100)  # Nome corrigido: remote2
+    net.addLink(locust, s1, bw=15, delay='2ms', loss=0.5, r2q=100)
+    net.addLink(serial, s2, bw=20, delay='20ms', loss=0.1, r2q=100)
+    net.addLink(locust_serial, s2, bw=15, delay='2ms', loss=0.5, r2q=100)
+    net.addLink(s1, s2, bw=50, delay='1ms', loss=0.1, r2q=100)
 
     net.start()
     CLI(net)

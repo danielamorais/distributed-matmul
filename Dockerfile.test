@@ -1,5 +1,7 @@
 FROM locustio/locust:latest
 
+RUN apt-get update && apt-get install -y iproute2
+
 # Cria um diretório específico para resultados
 RUN mkdir -p /home/locust/results && \
     chown -R locust:locust /home/locust/results
