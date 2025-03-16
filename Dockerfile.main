@@ -2,7 +2,7 @@
 FROM ubuntu:latest
 
 # Atualiza o índice de pacotes e instala dependências necessárias (curl e unzip)
-RUN apt-get update && apt-get install -y curl unzip python3 iproute2
+RUN apt-get update && apt-get install -y curl unzip python3 iproute2 iputils-ping
 
 RUN mkdir -p /dana
 
