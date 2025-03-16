@@ -1,7 +1,7 @@
-from containernet.net import Containernet
-from containernet.node import Docker
-from containernet.cli import CLI
-from containernet.link import TCLink
+from mininet.net import Containernet
+from mininet.node import Docker
+from mininet.cli import CLI
+from mininet.link import TCLink
 from mininet.node import RemoteController
 
 def create_network():
