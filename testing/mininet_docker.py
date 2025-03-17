@@ -9,10 +9,28 @@ def create_network():
     net.addController('c0', ip='127.0.0.1', port=6653)
 
     # Hosts Docker (nomes curtos)
-    dana_main = net.addDocker('dana', ip='10.0.0.251', dimage="distributed-matmul-dana-main")
-    remote1 = net.addDocker('remote1', ip='10.0.0.252', dimage="distributed-matmul-dana-remote-1")
-    remote2 = net.addDocker('remote2', ip='10.0.0.253', dimage="distributed-matmul-dana-remote-2")
-    locust = net.addDocker('locust', ip='10.0.0.254', dimage="distributed-matmul-locust-test", volumes=["/app/distributed-matmul/testing:/home/locust:rw"])
+    dana_main = net.addDocker('dana',
+                              ip='10.0.0.251',
+                              ports=[8080],
+                              port_bindings={8080: 8080},
+                              dimage="distributed-matmul-dana-main")
+    remote1 = net.addDocker('remote1',
+                            ip='10.0.0.252',
+                            ports=[8081],
+                            port_bindings={8081: 8081},
+                            environment={"PORT": 8081, "APP_PORT": 2010},
+                            dimage="distributed-matmul-dana-remote-1")
+    remote2 = net.addDocker('remote2',
+                            ip='10.0.0.253',
+                            ports=[8082],
+                            port_bindings={8082: 8082},
+                            environment={"PORT": 8082, "APP_PORT": 2011},
+                            dimage="distributed-matmul-dana-remote-2")
+    locust = net.addDocker('locust',
+                           ip='10.0.0.254',
+                           dimage="distributed-matmul-locust-test",
+                           environment={"LOCUST_HEADLESS": "true", "LOCUST_USERS": 500, "LOCUST_SPAWN_RATE": 50, "LOCUST_HOST": "http://10.0.0.251:8080", "LOCUST_RUN_TIME": "1m", "LOCUST_CSV": "results"},
+                           volumes=["/app/distributed-matmul/testing:/home/locust:rw"])
     # serial = net.addHost('serial', cls=Docker, ip='10.0.0.6', dimage="distributed-matmul-serial-matmul")
     # locust_serial = net.addHost('locust-ser', cls=Docker, ip='10.0.0.7', dimage="distributed-matmul-locust-test-serial")
 
