@@ -1,14 +1,23 @@
-FROM locustio/locust:latest
+FROM ubuntu:latest
 
-# Cria um diretório específico para resultados
-RUN mkdir -p /home/locust/results && \
-    chown -R locust:locust /home/locust/results
+# Instala dependências básicas e Python
+RUN apt-get update && \
+    apt-get install -y python3 python3-pip python3-locust iproute2 iputils-ping net-tools && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-# Copia o arquivo de testes para o container
-COPY testing/locustfile.py /home/locust/locustfile.py
+# Cria usuário e diretório para o Locust
+RUN useradd -m -s /bin/bash locust && \
+    chown -R locust:locust /home/locust
 
-# Define o diretório de trabalho
+# Copia o arquivo de testes com permissões adequadas
+COPY --chown=locust:locust testing/locustfile.py /home/locust/locustfile.py
+
+# Define diretório de trabalho
 WORKDIR /home/locust
 
-# Garante permissões adequadas
+# Usuário não-root
 USER locust
+
+# Comando padrão para executar o Locust
+CMD ["locust"]
