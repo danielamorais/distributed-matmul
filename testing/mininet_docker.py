@@ -30,7 +30,7 @@ def create_network():
                             network_mode="none",
                             dimage="distributed-matmul-dana-remote-2")
     locust = net.addDocker('locust',
-                           ip='10.0.0.254/24',
+                           ip='10.0.0.249/24',
                            dimage="distributed-matmul-locust-test",
                            environment={"LOCUST_HEADLESS": "true", "LOCUST_USERS": 500, "LOCUST_SPAWN_RATE": 50, "LOCUST_HOST": "http://10.0.0.251:8080", "LOCUST_RUN_TIME": "1m", "LOCUST_CSV": "results"},
                            network_mode="none",
@@ -40,7 +40,6 @@ def create_network():
 
     # Switches
     s1 = net.addSwitch('s1')
-    s1.setIP('10.0.0.1/24')  # Gateway para os hosts
     # s2 = net.addSwitch('s2')
 
     # Links (ajustados para os novos nomes)
@@ -50,9 +49,6 @@ def create_network():
     net.addLink(locust, s1, delay='6ms')
     # net.addLink(serial, s2, bw=20, delay='20ms', loss=0.1, r2q=500)
     # net.addLink(locust_serial, s2, bw=15, delay='2ms', loss=0.5, r2q=500)
-
-    for host in [dana_main, remote1, remote2, locust]:
-        host.cmd('route add default gw 10.0.0.1')
 
     try:
         net.start()
