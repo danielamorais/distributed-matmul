@@ -6,11 +6,12 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Cria usuário e diretório para o Locust
-RUN useradd -m -s /bin/bash locust && \
+# Configura o ping para usuários não-root e cria usuário
+RUN chmod u+s /bin/ping && \
+    useradd -m -s /bin/bash locust && \
     chown -R locust:locust /home/locust
 
-# Copia o arquivo de testes com permissões adequadas
+# Copia o arquivo de testes
 COPY --chown=locust:locust testing/locustfile.py /home/locust/locustfile.py
 
 # Define diretório de trabalho
@@ -19,5 +20,5 @@ WORKDIR /home/locust
 # Usuário não-root
 USER locust
 
-# Comando padrão para executar o Locust
+# Comando padrão
 CMD ["locust"]

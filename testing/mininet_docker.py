@@ -12,7 +12,7 @@ def create_network():
     dana_main = net.addDocker('dana', ip='10.0.0.251', dimage="distributed-matmul-dana-main")
     remote1 = net.addDocker('remote1', ip='10.0.0.252', dimage="distributed-matmul-dana-remote-1")
     remote2 = net.addDocker('remote2', ip='10.0.0.253', dimage="distributed-matmul-dana-remote-2")
-    locust = net.addDocker('locust', ip='10.0.0.254', dimage="distributed-matmul-locust-test")
+    locust = net.addDocker('locust', ip='10.0.0.254', dimage="distributed-matmul-locust-test", volumes=["/app/distributed-matmul/testing:/home/locust:rw"])
     # serial = net.addHost('serial', cls=Docker, ip='10.0.0.6', dimage="distributed-matmul-serial-matmul")
     # locust_serial = net.addHost('locust-ser', cls=Docker, ip='10.0.0.7', dimage="distributed-matmul-locust-test-serial")
 
