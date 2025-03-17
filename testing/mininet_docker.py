@@ -15,7 +15,7 @@ def create_network():
     dana_main = net.addDocker('dana', ip='10.0.0.251', dimage="distributed-matmul-dana-main")
     remote1 = net.addDocker('remote1', ip='10.0.0.252', dimage="distributed-matmul-dana-remote-1")
     remote2 = net.addDocker('remote2', ip='10.0.0.253', dimage="distributed-matmul-dana-remote-2")
-    # locust = net.addHost('locust', cls=Docker, ip='10.0.0.5', dimage="distributed-matmul-locust-test")
+    locust = net.addDocker('locust', ip='10.0.0.249', dimage="distributed-matmul-locust-test")
     # serial = net.addHost('serial', cls=Docker, ip='10.0.0.6', dimage="distributed-matmul-serial-matmul")
     # locust_serial = net.addHost('locust-ser', cls=Docker, ip='10.0.0.7', dimage="distributed-matmul-locust-test-serial")
 
@@ -27,7 +27,7 @@ def create_network():
     net.addLink(dana_main, s1, delay='1ms')
     net.addLink(remote1, s1, delay='1ms')
     net.addLink(remote2, s1, delay='1ms')
-    # net.addLink(locust, s1, bw=15, delay='2ms', loss=0.5, r2q=500)
+    net.addLink(locust, s1, delay='6ms')
     # net.addLink(serial, s2, bw=20, delay='20ms', loss=0.1, r2q=500)
     # net.addLink(locust_serial, s2, bw=15, delay='2ms', loss=0.5, r2q=500)
 

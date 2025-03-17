@@ -38,7 +38,7 @@ services:
       - LOCUST_HEADLESS=true
       - LOCUST_USERS=500
       - LOCUST_SPAWN_RATE=50
-      - LOCUST_HOST=http://dana-main:8080
+      - LOCUST_HOST=http://10.0.0.251:8080
       - LOCUST_RUN_TIME=1m
       - LOCUST_CSV=results
     networks:
