@@ -8,8 +8,8 @@
         { "lib": "data.StringUtil", "alias": "su" }
     ],
     "remotes": [
-        { "address": "10.0.0.251", "port": 8081 },
-        { "address": "10.0.0.252", "port": 8082 }
+        { "address": "10.5.0.3", "port": 8081 },
+        { "address": "10.5.0.4", "port": 8082 }
     ],
     "attributes": {},
 	"methods": {
