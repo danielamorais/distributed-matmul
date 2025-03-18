@@ -1,6 +1,6 @@
 
 component provides matmul.Matmul(AdaptEvents) requires rpc.RPCUtil connection, data.IntUtil iu, data.json.JSONEncoder je, data.StringUtil su {
-	Address remotes[] = new Address[](new Address("10.5.0.3", 8081),new Address("10.5.0.4", 8082))
+	Address remotes[] = new Address[](new Address("10.5.0.3", 8081),new Address("10.5.0.4", 8082),new Address("10.5.0.5", 8083),new Address("10.5.0.6", 8084))
 	int addressPointer = 0
 	Mutex pointerLock = new Mutex()
 

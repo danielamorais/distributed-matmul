@@ -9,7 +9,9 @@
     ],
     "remotes": [
         { "address": "10.5.0.3", "port": 8081 },
-        { "address": "10.5.0.4", "port": 8082 }
+        { "address": "10.5.0.4", "port": 8082 },
+        { "address": "10.5.0.5", "port": 8083 },
+        { "address": "10.5.0.6", "port": 8084 }
     ],
     "attributes": {},
 	"methods": {

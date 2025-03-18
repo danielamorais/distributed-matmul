@@ -15,8 +15,7 @@ class StressTestUser(HttpUser):
         with self.client.post("/matmul",
                               json={"A": A, "B": I},
                               catch_response=True) as response:
-
-            if response.text == '{"resultado": ' + A +'}':
+            if response.text.strip() == '{"resultado":' + A +'}':
                 response.success()
             else:
                 response.failure("Wrong response")

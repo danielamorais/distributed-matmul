@@ -9,15 +9,15 @@ def test_network():
     net.addController('c0')
 
     switch = net.addSwitch('s1')
-    dana = net.addHost('dana', ip='10.5.0.2/16')
-    remote1 = net.addHost('remote1', ip='10.5.0.3/16')
-    remote2 = net.addHost('remote2', ip='10.5.0.4/16')
-    remote3 = net.addHost('remote3', ip='10.5.0.5/16')
-    remote4 = net.addHost('remote4', ip='10.5.0.6/16')
+    dana = net.addHost('dana', ip='10.5.0.2/16', cpu=2)
+    remote1 = net.addHost('remote1', ip='10.5.0.3/16', cpu=1)
+    remote2 = net.addHost('remote2', ip='10.5.0.4/16', cpu=1)
+    remote3 = net.addHost('remote3', ip='10.5.0.5/16', cpu=1)
+    remote4 = net.addHost('remote4', ip='10.5.0.6/16', cpu=1)
     locust = net.addHost('locust', ip='10.5.0.7/16')
 
     switch2 = net.addSwitch('s2')
-    serial = net.addHost('serial', ip='10.6.0.2/16')
+    serial = net.addHost('serial', ip='10.6.0.2/16', cpu=2)
     locusts = net.addHost('locusts', ip='10.6.0.3/16')
 
     net.addLink(dana, switch, delay="1ms")
