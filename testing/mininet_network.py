@@ -62,8 +62,8 @@ def test_network():
 
     # Execute o Locust
     print("Iniciando teste Locust...")
-    locust.cmd("locust -f testing/locustfile.py --headless -u 200 -r 50 -H http://10.5.0.2:8080 --run-time 2m --csv results/dana &")
-    locusts.cmd("locust -f testing/locustfile_serial.py --headless -u 200 -r 50 -H http://10.6.0.2:8000 --run-time 2m --csv results/serial &")
+    locust.cmd("locust -f testing/locustfile.py --headless -u 300 -r 50 -H http://10.5.0.2:8080 --run-time 2m --csv results/300/unlimited/dana &")
+    locusts.cmd("locust -f testing/locustfile_serial.py --headless -u 300 -r 50 -H http://10.6.0.2:8000 --run-time 2m --csv results/300/unlimited/serial &")
 
     CLI(net)
     net.stop()

@@ -9,11 +9,11 @@ def test_network():
     net.addController('c0')
 
     switch = net.addSwitch('s1')
-    dana = net.addHost('dana', ip='10.5.0.2/16', cpu=2)
-    remote1 = net.addHost('remote1', ip='10.5.0.3/16', cpu=1)
-    remote2 = net.addHost('remote2', ip='10.5.0.4/16', cpu=1)
-    remote3 = net.addHost('remote3', ip='10.5.0.5/16', cpu=1)
-    remote4 = net.addHost('remote4', ip='10.5.0.6/16', cpu=1)
+    dana = net.addHost('dana', ip='10.5.0.2/16', cpu=1)
+    remote1 = net.addHost('remote1', ip='10.5.0.3/16', cpu=2)
+    remote2 = net.addHost('remote2', ip='10.5.0.4/16', cpu=2)
+    remote3 = net.addHost('remote3', ip='10.5.0.5/16', cpu=2)
+    remote4 = net.addHost('remote4', ip='10.5.0.6/16', cpu=2)
     locust = net.addHost('locust', ip='10.5.0.7/16')
 
     switch2 = net.addSwitch('s2')
@@ -62,8 +62,8 @@ def test_network():
 
     # Execute o Locust
     print("Iniciando teste Locust...")
-    locust.cmd("locust -f testing/locustfile.py --headless -u 200 -r 50 -H http://10.5.0.2:8080 --run-time 2m --csv results/dana &")
-    locusts.cmd("locust -f testing/locustfile_serial.py --headless -u 200 -r 50 -H http://10.6.0.2:8000 --run-time 2m --csv results/serial &")
+    locust.cmd("locust -f testing/locustfile.py --headless -u 300 -r 50 -H http://10.5.0.2:8080 --run-time 2m --csv results/300r/2cpu/dana &")
+    locusts.cmd("locust -f testing/locustfile_serial.py --headless -u 300 -r 50 -H http://10.6.0.2:8000 --run-time 2m --csv results/300r/2cpu/serial &")
 
     CLI(net)
     net.stop()
