@@ -4,12 +4,45 @@ const char debugMSG[] = "[@Server]"
 
 component provides server.Server requires io.Output out, http.HTTPUtil httpUtil, data.IntUtil iu,
     net.TCPServerSocket, net.TCPSocket, composition.Adapt adapter, composition.RecursiveLoader loader,
-    monitoring.ResponseTime rt {
+    monitoring.ResponseTime rt, time.Timer timer {
     bool adaptation = false
     MatmulController mc
     LoadedComponents matmul = loader.load("matmul/Matmul.o")
     LoadedComponents matmulProxy = loader.load("matmul/Matmul.proxy.o")
     LoadedComponents matmulController = loader.load("server/MatmulController.o")
+    Mutex lock = new Mutex()
+
+    void Server:scaleToProxy() {
+        TCPServerSocket host = new TCPServerSocket()
+        int port = 8080
+
+        matmulController.mainComponent.wire("matmul.Matmul", matmul.mainComponent, "matmul.Matmul")
+        mc = new MatmulController() from matmulController.mainComponent
+        
+        // binding server socket
+		if (!host.bind(TCPServerSocket.ANY_ADDRESS, port)) {
+			out.println("Error: failed to bind master socket")
+			return
+		}
+
+        asynch::scaleUpAfterOneMinute()
+
+        out.println("\n$debugMSG - Server is up and running...")
+        // out.print("option> ")
+
+		// handling incoming requests
+		while (true) {
+			TCPSocket client = new TCPSocket()
+			if (client.accept(host)) handleRequest(client)
+		}
+    }
+
+    void scaleUpAfterOneMinute() {
+        timer.sleep(30000)
+        mutex(lock) {
+            adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmulProxy.mainComponent)
+        }
+    }
 
     void Server:initWithProxy() {
         TCPServerSocket host = new TCPServerSocket()
@@ -31,7 +64,7 @@ component provides server.Server requires io.Output out, http.HTTPUtil httpUtil,
 		// handling incoming requests
 		while (true) {
 			TCPSocket client = new TCPSocket()
-			if (client.accept(host)) handleRequest(client)
+			if (client.accept(host)) asynch::handleRequest(client)
 		}
     }
 
@@ -54,7 +87,7 @@ component provides server.Server requires io.Output out, http.HTTPUtil httpUtil,
 		// handling incoming requests
 		while (true) {
 			TCPSocket client = new TCPSocket()
-			if (client.accept(host)) handleRequest(client)
+			if (client.accept(host)) asynch::handleRequest(client)
 		}
     }
 

@@ -1,4 +1,5 @@
 from locust import HttpUser, task, between
+import csv
 import random
 
 class StressTestUser(HttpUser):
@@ -15,6 +16,15 @@ class StressTestUser(HttpUser):
         with self.client.post("/matmul",
                               json={"A": A, "B": I},
                               catch_response=True) as response:
+            with open('results/serial_requests.csv', 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    response.request_meta["name"],
+                    response.request_meta["response_time"],
+                    response.status_code
+                ])
+
+
             if response.text.strip() == '{"resultado":' + A +'}':
                 response.success()
             else:

@@ -1,8 +1,9 @@
 from locust import HttpUser, task, between
+import csv
 import random
 
 class StressTestUser(HttpUser):
-    wait_time = between(1, 2.5)
+    wait_time = between(1, 3)
 
     @task
     def stress_test(self):
@@ -15,6 +16,14 @@ class StressTestUser(HttpUser):
         with self.client.post("/matmul",
                               json={"A": A, "B": I},
                               catch_response=True) as response:
+            # Log to CSV
+            with open('results/dana_requests.csv', 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    response.request_meta["name"],
+                    response.request_meta["response_time"],
+                    response.status_code
+                ])
 
             if response.text == A:
                 response.success()

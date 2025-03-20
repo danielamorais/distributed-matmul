@@ -20,7 +20,7 @@ component provides server.RemoteServer requires net.TCPSocket, net.TCPServerSock
 
         while (serviceStatus) {
 			TCPSocket client = new TCPSocket()
-			if (client.accept(host)) { asynch::handleRequest(client) }
+			if (client.accept(host)) asynch::handleRequest(client)
 		}
     }
 

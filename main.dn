@@ -20,7 +20,11 @@ component provides App requires server.Server server, io.Input in, io.Output out
     }
     
     int App:main(AppParam params[]) {
-        if(params.arrayLength > 0) {
+        if(params.arrayLength > 0 && iu.intFromString(params[0].string) == 3) {
+            server.init()
+        } else if(params.arrayLength > 0 && iu.intFromString(params[0].string) == 2) {
+            server.scaleToProxy()
+        } else if(params.arrayLength > 0 && iu.intFromString(params[0].string) == 1) {
             server.initWithProxy()
         } else {
             int instruction = 0

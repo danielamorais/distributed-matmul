@@ -30,42 +30,42 @@ services:
       - APP_PORT=2011
     networks:
       - dana
-  locust-test:
-    build:
-      context: .
-      dockerfile: ./Dockerfile.test
-    environment:
-      - LOCUST_HEADLESS=true
-      - LOCUST_USERS=500
-      - LOCUST_SPAWN_RATE=50
-      - LOCUST_HOST=http://10.0.0.251:8080
-      - LOCUST_RUN_TIME=1m
-      - LOCUST_CSV=results
-    networks:
-      - dana
-  # serial app + test
-  serial-matmul:
-    build:
-      context: .
-      dockerfile: ./Dockerfile.serial
-    ports:
-      - 5000:5000
-    networks:
-      - serial
+  # locust-test:
+  #   build:
+  #     context: .
+  #     dockerfile: ./Dockerfile.test
+  #   environment:
+  #     - LOCUST_HEADLESS=true
+  #     - LOCUST_USERS=500
+  #     - LOCUST_SPAWN_RATE=50
+  #     - LOCUST_HOST=http://10.0.0.251:8080
+  #     - LOCUST_RUN_TIME=1m
+  #     - LOCUST_CSV=results
+  #   networks:
+  #     - dana
+  # # serial app + test
+  # serial-matmul:
+  #   build:
+  #     context: .
+  #     dockerfile: ./Dockerfile.serial
+  #   ports:
+  #     - 5000:5000
+  #   networks:
+  #     - serial
 
-  locust-test-serial:
-    build:
-      context: .
-      dockerfile: ./Dockerfile.test
-    environment:
-      - LOCUST_HEADLESS=true
-      - LOCUST_USERS=500
-      - LOCUST_SPAWN_RATE=50
-      - LOCUST_HOST=http://serial-matmul:5000
-      - LOCUST_RUN_TIME=1m
-      - LOCUST_CSV=results
-    networks:
-      - serial
+  # locust-test-serial:
+  #   build:
+  #     context: .
+  #     dockerfile: ./Dockerfile.test
+  #   environment:
+  #     - LOCUST_HEADLESS=true
+  #     - LOCUST_USERS=500
+  #     - LOCUST_SPAWN_RATE=50
+  #     - LOCUST_HOST=http://serial-matmul:5000
+  #     - LOCUST_RUN_TIME=1m
+  #     - LOCUST_CSV=results
+  #   networks:
+  #     - serial
 
 networks:
   dana:
