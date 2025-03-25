@@ -3,11 +3,11 @@ import csv
 import random
 
 class StressTestUser(HttpUser):
-    wait_time = between(1, 2.5)
+    wait_time = between(1, 3)
 
     @task
     def stress_test(self):
-        size = 4
+        size = 5
         lines_A = ",".join([f"[{','.join(map(str, [random.randint(0, 10) for _ in range(size)]))}]" for _ in range(size)])
         lines_I = ",".join([f"[{','.join(['1' if i == j else '0' for i in range(size)])}]" for j in range(size)])
         A = f"[{lines_A}]"

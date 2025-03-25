@@ -9,26 +9,30 @@ def test_network():
     net.addController('c0')
 
     switch = net.addSwitch('s1')
+    switch2 = net.addSwitch('s2')
     dana = net.addHost('dana', ip='10.5.0.2/16', cpu=1)
-    remote1 = net.addHost('remote1', ip='10.5.0.3/16', cpu=1)
-    remote2 = net.addHost('remote2', ip='10.5.0.4/16', cpu=1)
-    remote3 = net.addHost('remote3', ip='10.5.0.5/16', cpu=1)
-    remote4 = net.addHost('remote4', ip='10.5.0.6/16', cpu=1)
+    remote1 = net.addHost('remote1', ip='10.5.0.3/16', cpu=3)
+    remote2 = net.addHost('remote2', ip='10.5.0.4/16', cpu=3)
+    remote3 = net.addHost('remote3', ip='10.5.0.5/16', cpu=3)
+    remote4 = net.addHost('remote4', ip='10.5.0.6/16', cpu=3)
     locust = net.addHost('locust', ip='10.5.0.7/16')
 
-    switch2 = net.addSwitch('s2')
+    switch3 = net.addSwitch('s3')
     serial = net.addHost('serial', ip='10.6.0.2/16', cpu=1)
     locusts = net.addHost('locusts', ip='10.6.0.3/16')
 
+    net.addLink(dana, switch2, delay="1ms")
+    net.addLink(remote1, switch2, delay="1ms")
+    net.addLink(remote2, switch2, delay="1ms")
+    net.addLink(remote3, switch2, delay="1ms")
+    net.addLink(remote4, switch2, delay="1ms")
+    
+    net.addLink(switch, switch2)
     net.addLink(dana, switch, delay="1ms")
-    net.addLink(remote1, switch, delay="1ms")
-    net.addLink(remote2, switch, delay="1ms")
-    net.addLink(remote3, switch, delay="1ms")
-    net.addLink(remote4, switch, delay="1ms")
     net.addLink(locust, switch, delay="5ms")
 
-    net.addLink(serial, switch2, delay="5ms")
-    net.addLink(locusts, switch2, delay="20ms")
+    net.addLink(serial, switch3, delay="5ms")
+    net.addLink(locusts, switch3, delay="20ms")
 
     net.start()
 
@@ -62,8 +66,8 @@ def test_network():
 
     # Execute o Locust
     print("Iniciando teste Locust...")
-    locust.cmd("locust -f testing/locustfile.py --headless -u 200 -r 50 -H http://10.5.0.2:8080 --run-time 1m --csv results/200/self_distribution/dana &")
-    locusts.cmd("locust -f testing/locustfile_serial.py --headless -u 200 -r 50 -H http://10.6.0.2:8000 --run-time 1m --csv results/200/self_distribution/serial &")
+    locust.cmd("locust -f testing/locustfile.py --headless -u 160 -r 20 -H http://10.5.0.2:8080 --run-time 3m --csv results/160/self_distribution/dana &")
+    locusts.cmd("locust -f testing/locustfile_serial.py --headless -u 160 -r 20 -H http://10.6.0.2:8000 --run-time 3m --csv results/160/self_distribution/serial &")
 
     CLI(net)
     net.stop()

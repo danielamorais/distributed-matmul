@@ -38,7 +38,7 @@ component provides server.Server requires io.Output out, http.HTTPUtil httpUtil,
     }
 
     void scaleUpAfterOneMinute() {
-        timer.sleep(30000)
+        timer.sleep(40000)
         mutex(lock) {
             adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmulProxy.mainComponent)
         }
