@@ -11,10 +11,9 @@ def test_network():
     switch = net.addSwitch('s1')
     switch2 = net.addSwitch('s2')
     dana = net.addHost('dana', ip='10.5.0.2/16', cpu=1)
-    remote1 = net.addHost('remote1', ip='10.5.0.3/16', cpu=3)
-    remote2 = net.addHost('remote2', ip='10.5.0.4/16', cpu=3)
-    remote3 = net.addHost('remote3', ip='10.5.0.5/16', cpu=3)
-    remote4 = net.addHost('remote4', ip='10.5.0.6/16', cpu=3)
+    remote1 = net.addHost('remote1', ip='10.5.0.3/16', cpu=5)
+    remote2 = net.addHost('remote2', ip='10.5.0.4/16', cpu=5)
+    remote3 = net.addHost('remote3', ip='10.5.0.5/16', cpu=5)
     locust = net.addHost('locust', ip='10.5.0.7/16')
 
     switch3 = net.addSwitch('s3')
@@ -25,7 +24,6 @@ def test_network():
     net.addLink(remote1, switch2, delay="1ms")
     net.addLink(remote2, switch2, delay="1ms")
     net.addLink(remote3, switch2, delay="1ms")
-    net.addLink(remote4, switch2, delay="1ms")
     
     net.addLink(switch, switch2)
     net.addLink(dana, switch, delay="1ms")
@@ -42,15 +40,14 @@ def test_network():
     remote1.cmd('export DANA_HOME=/home/arthurb/dana_lang && export PATH=$PATH:$DANA_HOME')
     remote2.cmd('export DANA_HOME=/home/arthurb/dana_lang && export PATH=$PATH:$DANA_HOME')
     remote3.cmd('export DANA_HOME=/home/arthurb/dana_lang && export PATH=$PATH:$DANA_HOME')
-    remote4.cmd('export DANA_HOME=/home/arthurb/dana_lang && export PATH=$PATH:$DANA_HOME')
 
     dana.cmd('dana main.o 2 > dana.log 2>&1 &')
     remote1.cmd('dana RemoteRepo.o 8081 2010 > remote1.log 2>&1 &')
     remote2.cmd('dana RemoteRepo.o 8082 2011 > remote2.log 2>&1 &')
     remote3.cmd('dana RemoteRepo.o 8083 2012 > remote3.log 2>&1 &')
-    remote4.cmd('dana RemoteRepo.o 8084 2013 > remote4.log 2>&1 &')
 
-    serial.cmd("gunicorn -w 1 -b 0.0.0.0:8000 serial_matmul.app:app &")
+    serial.cmd('export DANA_HOME=/home/arthurb/dana_lang && export PATH=$PATH:$DANA_HOME')
+    serial.cmd("dana main.o 3 &")
 
     # Aguarde 10 segundos para serviços inicializarem
     time.sleep(5)
@@ -60,14 +57,13 @@ def test_network():
     net.ping([dana, remote1], timeout=1)
     net.ping([dana, remote2], timeout=1)
     net.ping([dana, remote3], timeout=1)
-    net.ping([dana, remote4], timeout=1)
     net.ping([locust, dana], timeout=1)
     net.ping([locusts, serial], timeout=1)
 
     # Execute o Locust
     print("Iniciando teste Locust...")
-    locust.cmd("locust -f testing/locustfile.py --headless -u 160 -r 20 -H http://10.5.0.2:8080 --run-time 3m --csv results/160/self_distribution/dana &")
-    locusts.cmd("locust -f testing/locustfile_serial.py --headless -u 160 -r 20 -H http://10.6.0.2:8000 --run-time 3m --csv results/160/self_distribution/serial &")
+    locust.cmd("locust -f testing/locustfile.py --headless -u 60 -r 6 -H http://10.5.0.2:8080 -t 30s --csv results/dana_request_time_analisys/data/dana &")
+    locusts.cmd("locust -f testing/locustfile_serial.py --headless -u 60 -r 6 -H http://10.6.0.2:8080 -t 30s --csv results/dana_request_time_analisys/data/serial &")
 
     CLI(net)
     net.stop()

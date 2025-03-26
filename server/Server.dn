@@ -10,6 +10,7 @@ component provides server.Server requires io.Output out, http.HTTPUtil httpUtil,
     LoadedComponents matmul = loader.load("matmul/Matmul.o")
     LoadedComponents matmulProxy = loader.load("matmul/Matmul.proxy.o")
     LoadedComponents matmulController = loader.load("server/MatmulController.o")
+    int lastResponseTime = 0
     Mutex lock = new Mutex()
 
     void Server:scaleToProxy() {
@@ -25,23 +26,14 @@ component provides server.Server requires io.Output out, http.HTTPUtil httpUtil,
 			return
 		}
 
-        asynch::scaleUpAfterOneMinute()
-
         out.println("\n$debugMSG - Server is up and running...")
         // out.print("option> ")
 
 		// handling incoming requests
 		while (true) {
 			TCPSocket client = new TCPSocket()
-			if (client.accept(host)) handleRequest(client)
+			if (client.accept(host)) handleScaleRequest(client)
 		}
-    }
-
-    void scaleUpAfterOneMinute() {
-        timer.sleep(40000)
-        mutex(lock) {
-            adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmulProxy.mainComponent)
-        }
     }
 
     void Server:initWithProxy() {
@@ -101,15 +93,20 @@ component provides server.Server requires io.Output out, http.HTTPUtil httpUtil,
     }
 
     void Server:handleRequest(store TCPSocket client) {
-        // out.println("\n============= REQUEST START ===========")
+        HTTPMessage msg = httpUtil.readHTTPRequest(client)
+        process(msg)
+    }
+
+    void handleScaleRequest(store TCPSocket client) {
         HTTPMessage msg = httpUtil.readHTTPRequest(client)
         rt.markStartTime()
         process(msg)
         rt.markFinishTime()
-        // out.println("[SERVER] - response time: $(iu.makeString(rt.getResult()))")
-        // out.println("============= REQUEST END   ===========")
+        if(rt.getResult() - lastResponseTime > 200) {
+            mutex(lock) adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmulProxy.mainComponent)
+        }
+        lastResponseTime = rt.getResult()
         rt.clearTime()
-        // out.print("option> ")
     }
     
     void Server:process(HTTPMessage request) {
