@@ -1,4 +1,4 @@
-Timestamp,Response Time (ms),responseCode
+Timestamp (seconds),Response Time (ms),responseCode
 15,822.6776206865907,200
 15,920.5923024564981,200
 15,932.7529901638627,200

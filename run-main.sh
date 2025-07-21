@@ -1,2 +1,2 @@
 #!/bin/bash
-dana main.o 2
+dana main.o

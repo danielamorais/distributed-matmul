@@ -30,8 +30,7 @@
             "parameters": [
                 {"name": "A", "type": "Matrix", "stringParser": "matrixToChar({})"},
                 {"name": "B", "type": "Matrix", "stringParser": "matrixToChar({})"}
-            ],
-            "combineArgumentsOn": "MatmulFormat"
+            ]
         },
         "matrixToChar": {
             "returnType": "char[]",
