@@ -1,5 +1,5 @@
 uses server.Server
-uses http.HTTPUtil
+uses network.http.HTTPUtil
 
 interface MatmulController {
     Response handle(HTTPMessage request)

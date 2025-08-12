@@ -8,6 +8,8 @@ services:
       - dana
     ports:
       - 8080:8080
+    environment:
+      - MODE=1
   dana-remote-1:
     build:
       context: .

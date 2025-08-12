@@ -1,0 +1,56 @@
+uses Constants
+const char debugMSG[] = "[@Remote]"
+
+component provides server.Remote:matmul requires net.TCPSocket, net.TCPServerSocket, io.Output out, data.IntUtil iu, data.json.JSONEncoder je, data.StringUtil su, network.rpc.RPCUtil rpc, matmul.Matmul remoteComponent {
+	bool serviceStatus = false
+
+	void Remote:start(int PORT) {
+		TCPServerSocket host = new TCPServerSocket()
+		serviceStatus = true
+
+		if (!host.bind(TCPServerSocket.ANY_ADDRESS, PORT)) {
+			out.println("Error: failed to bind master socket")
+			return
+		}
+
+		out.println("$debugMSG - Server started on port $(iu.makeString(PORT))")
+
+		while (serviceStatus) {
+			TCPSocket client = new TCPSocket()
+			if (client.accept(host)) asynch::handleRequest(client)
+		}
+
+	}
+
+	void Remote:handleRequest(TCPSocket s) {
+		char requestContent[] = rpc.receiveData(s)
+		if(requestContent == null) s.disconnect()
+		Request req = rpc.parseRequestFromString(requestContent)
+		Response res = process(req)
+		char rawResponse[] = rpc.buildRawResponse(res)
+		s.send(rawResponse)
+		s.disconnect()
+	}
+
+
+	Response process(Request req) {
+		char method[] = rpc.getMethodFromMetadata(req.meta)
+
+		if(method == "calcLine") {
+			CalcLineParamsFormat paramsData = je.jsonToData(req.content, typeof(CalcLineParamsFormat))
+			Line result = remoteComponent.calcLine(remoteComponent.charToLine(paramsData.line),remoteComponent.charToMatrix(paramsData.B))
+			return rpc.buildResponseWithData("calcLine", "200", remoteComponent.lineToChar(result))
+		}
+
+		if(method == "multiply") {
+			MultiplyParamsFormat paramsData = je.jsonToData(req.content, typeof(MultiplyParamsFormat))
+			Matrix result = remoteComponent.multiply(remoteComponent.charToMatrix(paramsData.A),remoteComponent.charToMatrix(paramsData.B))
+			return rpc.buildResponseWithData("multiply", "200", remoteComponent.matrixToChar(result))
+		}
+
+		return rpc.buildResponse(method, "404")
+	}
+
+
+}
+

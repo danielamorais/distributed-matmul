@@ -31,4 +31,7 @@ interface RPCUtil {
     Request parseRequestFromString(char requestString[])
     char[] receiveData(TCPSocket s)
     char[] buildRawResponse(Response r)
+    char[] getMethodFromMetadata(Metadata meta[])
+    Response buildResponse(char method[], char status[])
+    Response buildResponseWithData(char method[], char status[], char content[])
 }

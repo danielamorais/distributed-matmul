@@ -1,21 +1,17 @@
 const int DEFAULT_DIST_PORT = 8081
-const int DEFAULT_APP_PORT  = 2010
 
 component provides App requires io.Input in, io.Output out, data.IntUtil iu,
-	Loader loader, server.RemoteServer server {
+	Loader loader, server.Remote:matmul service {
     int portDist = 0
-	int portApp	= 0
-    
+
     int App:main(AppParam params[]) {
         if (params.arrayLength == 2) {
 			portDist = iu.intFromString(params[0].string)
-			portApp = iu.intFromString(params[1].string)
 		} else {
 			portDist = DEFAULT_DIST_PORT
-			portApp = DEFAULT_APP_PORT
 		} 
 		
-		server.start(portDist)
+		service.start(portDist)
 
         return 0
     }

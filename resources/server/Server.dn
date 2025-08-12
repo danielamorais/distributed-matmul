@@ -1,4 +1,4 @@
-uses http.HTTPUtil
+uses network.http.HTTPUtil
 uses adapter.Adapter
 
 data Response {

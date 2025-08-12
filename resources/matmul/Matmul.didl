@@ -2,15 +2,14 @@
 	"outputFolder": "./matmul",
     "componentFile": "./matmul/Matmul.dn",
     "dependencies": [
-        { "lib": "rpc.RPCUtil", "alias": "connection" },
+        { "lib": "network.rpc.RPCUtil", "alias": "connection" },
         { "lib": "data.IntUtil", "alias": "iu" },
         { "lib": "data.json.JSONEncoder", "alias": "je" },
         { "lib": "data.StringUtil", "alias": "su" }
     ],
     "remotes": [
-        { "address": "10.5.0.3", "port": 8081 },
-        { "address": "10.5.0.4", "port": 8082 },
-        { "address": "10.5.0.5", "port": 8083 }
+        { "address": "dana-remote-1", "port": 8081 },
+        { "address": "dana-remote-2", "port": 8082 }
     ],
     "attributes": {},
 	"methods": {
@@ -18,18 +17,20 @@
             "returnType": "Line",
             "strategy": "distribute",
             "returnParser": "charToLine({})",
+            "remoteReturnParser": "lineToChar({})",
             "parameters": [
-                {"name": "line", "type": "Line", "useFormat": "line.line", "stringParser": "lineToChar({})"},
-                {"name": "B", "type": "Matrix",  "stringParser": "matrixToChar({})"}
+                {"name": "line", "type": "Line", "stringParser": "lineToChar({})", "variableParser": "charToLine({})"},
+                {"name": "B", "type": "Matrix",  "stringParser": "matrixToChar({})", "variableParser": "charToMatrix({})"}
             ]
         },
         "multiply": {
             "returnType": "Matrix",
             "strategy": "distribute",
             "returnParser": "charToMatrix({})",
+            "remoteReturnParser": "matrixToChar({})",
             "parameters": [
-                {"name": "A", "type": "Matrix", "stringParser": "matrixToChar({})"},
-                {"name": "B", "type": "Matrix", "stringParser": "matrixToChar({})"}
+                {"name": "A", "type": "Matrix", "stringParser": "matrixToChar({})", "variableParser": "charToMatrix({})"},
+                {"name": "B", "type": "Matrix", "stringParser": "matrixToChar({})", "variableParser": "charToMatrix({})"}
             ]
         },
         "matrixToChar": {
@@ -43,7 +44,7 @@
             "returnType": "char[]",
             "strategy": "local",
             "parameters": [
-                {"name": "line", "type": "int[]"}
+                {"name": "line", "type": "Line"}
             ]
         },
         "charToMatrix": {

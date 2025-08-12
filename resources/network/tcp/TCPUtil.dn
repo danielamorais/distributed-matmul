@@ -1,0 +1,7 @@
+uses net.TCPServerSocket
+uses net.TCPSocket
+
+interface TCPUtil { 
+    TCPServerSocket initServer(int port)
+    TCPSocket getConnection(TCPServerSocket host)
+}

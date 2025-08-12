@@ -1,6 +1,6 @@
 const char debugMSG[] = "[@RPCUtil]"
 
-component provides RPCUtil requires data.json.JSONEncoder je, net.TCPSocket, io.Output out,
+component provides network.rpc.RPCUtil requires data.json.JSONEncoder je, net.TCPSocket, io.Output out,
     data.IntUtil iu, data.StringUtil su, Constants {
     TCPSocket connectionSocket = null
 
@@ -48,8 +48,6 @@ component provides RPCUtil requires data.json.JSONEncoder je, net.TCPSocket, io.
         return su.rtrim(body)
     }
 
-
-    
     Request RPCUtil:parseRequestFromString(char requestString[]) {
         Request r = null
         String json[] = su.explode(requestString, Constants.SEPARATOR)
@@ -63,11 +61,32 @@ component provides RPCUtil requires data.json.JSONEncoder je, net.TCPSocket, io.
 
         return r
     }
-
     
     char[] RPCUtil:buildRawResponse(Response res) {
         if(res.content == null) return new char[](je.jsonFromArray(res.meta), Constants.EOF)
         else return new char[](je.jsonFromArray(res.meta), Constants.SEPARATOR, res.content, Constants.EOF)
+    }
+
+    Response RPCUtil:buildResponse(char method[], char status[]) {
+        Metadata statusMeta = new Metadata("status", status)
+        Metadata methodMeta = new Metadata("method", method)
+        Metadata allMetas[] = new Metadata[](statusMeta, methodMeta)
+        return new Response(allMetas)
+    }
+
+    Response RPCUtil:buildResponseWithData(char method[], char status[], char content[]) {
+        Metadata statusMeta = new Metadata("status", status)
+        Metadata methodMeta = new Metadata("method", method)
+        Metadata allMetas[] = new Metadata[](statusMeta, methodMeta)
+        return new Response(allMetas, content)
+    }
+
+    char[] RPCUtil:getMethodFromMetadata(Metadata meta[]) {
+        for(int i =0; i < meta.arrayLength; i++) {
+            if(meta[i].name == "method") return meta[i].value
+        }
+
+        return ""
     }
 
 }

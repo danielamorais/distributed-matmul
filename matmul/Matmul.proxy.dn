@@ -1,11 +1,11 @@
 
-component provides matmul.Matmul(AdaptEvents) requires rpc.RPCUtil connection, data.IntUtil iu, data.json.JSONEncoder je, data.StringUtil su {
-	Address remotes[] = new Address[](new Address("10.5.0.3", 8081),new Address("10.5.0.4", 8082),new Address("10.5.0.5", 8083))
+component provides matmul.Matmul(AdaptEvents) requires network.rpc.RPCUtil connection, data.IntUtil iu, data.json.JSONEncoder je, data.StringUtil su {
+	Address remotes[] = new Address[](new Address("dana-remote-1", 8081),new Address("dana-remote-2", 8082))
 	int addressPointer = 0
 	Mutex pointerLock = new Mutex()
 
 	Line Matmul:calcLine(Line line, Matrix B) {
-		CalcLineParamsFormat params = new CalcLineParamsFormat(lineToChar(line.line), matrixToChar(B))
+		CalcLineParamsFormat params = new CalcLineParamsFormat(lineToChar(line), matrixToChar(B))
 		char requestBody[] = je.jsonFromData(params)
 		Request req = new Request(buildMetaForMethod("calcLine"), requestBody)
 		Response res = distribute(req)
@@ -40,12 +40,13 @@ component provides matmul.Matmul(AdaptEvents) requires rpc.RPCUtil connection, d
         return result
 	}
 
-	char[] Matmul:lineToChar(int line[]) {
+	char[] Matmul:lineToChar(Line line) {
         char result[] = new char[]("[")
+        int lineValue[] = line.line
 
-        for(int i=0; i<line.arrayLength; i++) {
-            if (i == line.arrayLength - 1) result = new char[](result, iu.makeString(line[i]))
-            else result = new char[](result, iu.makeString(line[i]), ",")
+        for(int i=0; i<lineValue.arrayLength; i++) {
+            if (i == lineValue.arrayLength - 1) result = new char[](result, iu.makeString(lineValue[i]))
+            else result = new char[](result, iu.makeString(lineValue[i]), ",")
         }
 
         result = new char[](result, "]")

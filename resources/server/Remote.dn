@@ -5,7 +5,7 @@ data Param {
     char key[]
 }
 
-interface RemoteServer {
+interface Remote {
     void start(int port)
     void handleRequest(TCPSocket s)
 }

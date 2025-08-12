@@ -1,6 +1,6 @@
 import json
 
-class DpdlReader:
+class DidlReader:
     def __init__(self, json_path):
         config_json = json.load(json_path)
         self.output_folder = config_json['outputFolder']

@@ -1,6 +1,6 @@
 const char debugMSG[] = "[@HTTPUtil]"
 
-component provides http.HTTPUtil requires io.Output out, data.IntUtil iu, io.FileSystem fileSystem, 
+component provides network.http.HTTPUtil requires io.Output out, data.IntUtil iu, io.FileSystem fileSystem, 
 	data.StringUtil stringUtil {
     
     HTTPMessage HTTPUtil:readHeader(store TCPSocket s) {

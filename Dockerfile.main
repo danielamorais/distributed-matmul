@@ -31,5 +31,6 @@ RUN chmod +x /app/run-main.sh
 
 RUN /app/compile.sh
 
+# ENV MODE=1
 # Define um comando padrão para interagir com o container
 CMD ["/app/run-main.sh"]

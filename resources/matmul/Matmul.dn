@@ -23,5 +23,5 @@ interface Matmul {
     Matrix charToMatrix(char matrixChar[])
     Line charToLine(char lineString[])
     char[] matrixToChar(Matrix matrix)
-    char[] lineToChar(int line[])
+    char[] lineToChar(Line line)
 }

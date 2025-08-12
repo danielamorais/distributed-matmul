@@ -1,10 +1,11 @@
 uses server.MatmulController
 
 const char debugMSG[] = "[@Server]"
+const int SERVER_PORT = 8080
 
-component provides server.Server requires io.Output out, http.HTTPUtil httpUtil, data.IntUtil iu,
+component provides server.Server requires io.Output out, network.http.HTTPUtil httpUtil, data.IntUtil iu,
     net.TCPServerSocket, net.TCPSocket, composition.Adapt adapter, composition.RecursiveLoader loader,
-    monitoring.ResponseTime rt, time.Timer timer {
+    monitoring.ResponseTime rt, time.Timer timer, network.tcp.TCPUtil tcpUtil {
     bool adaptation = false
     MatmulController mc
     LoadedComponents matmul = loader.load("matmul/Matmul.o")
@@ -15,19 +16,17 @@ component provides server.Server requires io.Output out, http.HTTPUtil httpUtil,
 
     void Server:scaleToProxy() {
         TCPServerSocket host = new TCPServerSocket()
-        int port = 8080
 
         matmulController.mainComponent.wire("matmul.Matmul", matmul.mainComponent, "matmul.Matmul")
         mc = new MatmulController() from matmulController.mainComponent
         
         // binding server socket
-		if (!host.bind(TCPServerSocket.ANY_ADDRESS, port)) {
+		if (!host.bind(TCPServerSocket.ANY_ADDRESS, SERVER_PORT)) {
 			out.println("Error: failed to bind master socket")
 			return
 		}
 
         out.println("\n$debugMSG - Server is up and running...")
-        // out.print("option> ")
 
 		// handling incoming requests
 		while (true) {
@@ -38,20 +37,18 @@ component provides server.Server requires io.Output out, http.HTTPUtil httpUtil,
 
     void Server:initWithProxy() {
         TCPServerSocket host = new TCPServerSocket()
-        int port = 8080
 
         matmulController.mainComponent.wire("matmul.Matmul", matmulProxy.mainComponent, "matmul.Matmul")
         mc = new MatmulController() from matmulController.mainComponent
         adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmulProxy.mainComponent)
         
         // binding server socket
-		if (!host.bind(TCPServerSocket.ANY_ADDRESS, port)) {
+		if (!host.bind(TCPServerSocket.ANY_ADDRESS, SERVER_PORT)) {
 			out.println("Error: failed to bind master socket")
 			return
 		}
 
         out.println("\n$debugMSG - Server is up and running...")
-        // out.print("option> ")
 
 		// handling incoming requests
 		while (true) {
@@ -62,24 +59,21 @@ component provides server.Server requires io.Output out, http.HTTPUtil httpUtil,
 
     void Server:init() {
         TCPServerSocket host = new TCPServerSocket()
-        int port = 8080
-
-        matmulController.mainComponent.wire("matmul.Matmul", matmul.mainComponent, "matmul.Matmul")
-        mc = new MatmulController() from matmulController.mainComponent
         
         // binding server socket
-		if (!host.bind(TCPServerSocket.ANY_ADDRESS, port)) {
+		if (!host.bind(TCPServerSocket.ANY_ADDRESS, SERVER_PORT)) {
 			out.println("Error: failed to bind master socket")
 			return
 		}
 
         out.println("\n$debugMSG - Server is up and running...")
-        // out.print("option> ")
 
-		// handling incoming requests
+        matmulController.mainComponent.wire("matmul.Matmul", matmul.mainComponent, "matmul.Matmul")
+        mc = new MatmulController() from matmulController.mainComponent
+
 		while (true) {
 			TCPSocket client = new TCPSocket()
-			if (client.accept(host)) asynch::handleRequest(client)
+            if(client.accept(host)) asynch::handleRequest(client)
 		}
     }
 
