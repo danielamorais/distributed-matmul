@@ -8,8 +8,8 @@
         { "lib": "data.StringUtil", "alias": "su" }
     ],
     "remotes": [
-        { "address": "dana-remote-1", "port": 8081 },
-        { "address": "dana-remote-2", "port": 8082 }
+        { "address": "dana-remote-service", "port": 8081 },
+        { "address": "dana-remote-2-service", "port": 8082 }
     ],
     "attributes": {},
 	"methods": {

@@ -1,2 +1,2 @@
 #!/bin/bash
-dana RemoteRepo.o $PORT $APP_PORT
+dana app/RemoteRepo.o $PORT $APP_PORT

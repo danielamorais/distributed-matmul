@@ -1,7 +1,6 @@
 const int DEFAULT_DIST_PORT = 8081
 
-component provides App requires io.Input in, io.Output out, data.IntUtil iu,
-	Loader loader, server.Remote:matmul service {
+component provides App requires data.IntUtil iu, server.Remote:matmul service {
     int portDist = 0
 
     int App:main(AppParam params[]) {

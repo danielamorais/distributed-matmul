@@ -1,2 +1,2 @@
 #!/bin/bash
-dana main.o $MODE
+dana app/main.o $MODE

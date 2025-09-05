@@ -1,0 +1,156 @@
+# ===================================================================
+# DANA-MAIN: Componente principal da aplicação
+# ===================================================================
+
+# --- Deployment para o dana-main ---
+# Gerencia os Pods (instâncias) da sua aplicação principal.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dana-main-deployment
+  labels:
+    app: dana-main
+spec:
+  replicas: 1 # Você pode escalar o número de réplicas conforme necessário
+  selector:
+    matchLabels:
+      app: dana-main
+  template:
+    metadata:
+      labels:
+        app: dana-main
+    spec:
+      containers:
+      - name: dana-main
+        # IMPORTANTE: Substitua pela sua imagem em um registro (Docker Hub, GCR, etc.)
+        image: distributed-matmul-dana-main:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: MODE
+          value: "1"
+
+---
+
+# --- Service para o dana-main ---
+# Expõe o dana-main para o tráfego externo através de um LoadBalancer.
+apiVersion: v1
+kind: Service
+metadata:
+  name: dana-main-service
+spec:
+  # O tipo LoadBalancer provisiona um balanceador de carga em provedores de nuvem.
+  # Para ambientes locais, você pode usar NodePort ou Ingress.
+  type: NodePort
+  selector:
+    app: dana-main
+  ports:
+  - protocol: TCP
+    port: 8080 # Porta que será exposta para o mundo externo
+    targetPort: 8080 # Porta do container que receberá o tráfego
+
+# ===================================================================
+# DANA-REMOTE: Primeiro componente remoto
+# ===================================================================
+
+---
+
+# --- Deployment para o dana-remote ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dana-remote-deployment
+  labels:
+    app: dana-remote
+spec:
+  replicas: 1 # Pode ser escalado independentemente
+  selector:
+    matchLabels:
+      app: dana-remote
+  template:
+    metadata:
+      labels:
+        app: dana-remote
+    spec:
+      containers:
+      - name: dana-remote
+        # IMPORTANTE: Substitua pela sua imagem em um registro
+        image: distributed-matmul-dana-remote:latest
+        ports:
+        - containerPort: 8081
+        env:
+        - name: PORT
+          value: "8081"
+        - name: APP_PORT
+          value: "2010"
+
+---
+
+# --- Service para o dana-remote ---
+# Expõe o dana-remote para outros serviços DENTRO do cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: dana-remote-service
+spec:
+  # O tipo ClusterIP é o padrão e só é acessível de dentro do cluster.
+  # O 'dana-main' pode acessá-lo via DNS: http://dana-remote-service:8081
+  type: ClusterIP
+  selector:
+    app: dana-remote
+  ports:
+  - protocol: TCP
+    port: 8081
+    targetPort: 8081
+
+# ===================================================================
+# DANA-REMOTE-2: Segundo componente remoto
+# ===================================================================
+
+---
+
+# --- Deployment para o dana-remote-2 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dana-remote-2-deployment
+  labels:
+    app: dana-remote-2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dana-remote-2
+  template:
+    metadata:
+      labels:
+        app: dana-remote-2
+    spec:
+      containers:
+      - name: dana-remote-2
+        # IMPORTANTE: A mesma imagem do dana-remote, mas com config diferente
+        image: distributed-matmul-dana-remote-2:latest
+        ports:
+        - containerPort: 8082
+        env:
+        - name: PORT
+          value: "8082"
+        - name: APP_PORT
+          value: "2011"
+
+---
+
+# --- Service para o dana-remote-2 ---
+# Expõe o dana-remote-2 para outros serviços DENTRO do cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: dana-remote-2-service
+spec:
+  type: ClusterIP
+  selector:
+    app: dana-remote-2
+  ports:
+  - protocol: TCP
+    port: 8082
+    targetPort: 8082
