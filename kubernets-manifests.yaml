@@ -24,6 +24,7 @@ spec:
       - name: dana-main
         # IMPORTANTE: Substitua pela sua imagem em um registro (Docker Hub, GCR, etc.)
         image: distributed-matmul-dana-main:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
         env:
@@ -76,6 +77,7 @@ spec:
       - name: dana-remote
         # IMPORTANTE: Substitua pela sua imagem em um registro
         image: distributed-matmul-dana-remote:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8081
         env:
@@ -130,6 +132,7 @@ spec:
       - name: dana-remote-2
         # IMPORTANTE: A mesma imagem do dana-remote, mas com config diferente
         image: distributed-matmul-dana-remote-2:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8082
         env:
