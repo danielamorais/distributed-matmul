@@ -22,12 +22,38 @@ mkdir -p wasm_output
 echo "Compiling main application to WASM..."
 dnc app/mainWasm.dn -os ubc -chip 32 -o wasm_output/App.o
 
-echo "Compiling additional components..."
+# echo "Compiling additional components..."
 
-if [ -f "server/ServerWasm.dn" ]; then
-     echo "Compiling Server component..."
-     dnc server/ServerWasm.dn -os ubc -chip 32 -o wasm_output/server/ServerWasm.o
-fi
+# if [ -f "server/ServerWasm.dn" ]; then
+#      echo "Compiling Server component..."
+#      dnc server/ServerWasm.dn -os ubc -chip 32 -o wasm_output/server/ServerWasm.o
+# fi
+
+# Compile all .dn files to WASM
+echo "Compiling all .dn files to WASM..."
+find . -name "*.dn" -type f \
+    ! -path "./wasm_output/*" \
+    ! -path "./webserver/*" \
+    ! -path "./.git/*" \
+    ! -path "./results/*" \
+    ! -path "./testing/*" \
+    ! -path "./proxy_generator/*" \
+    ! -name "mainWasm.dn" | while read file; do
+    # Get the relative path without extension
+    rel_path="${file%.dn}"
+    rel_path="${rel_path#./}"
+    
+    # Create output directory structure
+    output_dir="wasm_output/$(dirname "$rel_path")"
+    mkdir -p "$output_dir"
+    
+    # Get the output filename
+    base_name=$(basename "$rel_path")
+    output_file="$output_dir/$base_name.o"
+    
+    echo "Compiling $file -> $output_file"
+    dnc "$file" -os ubc -chip 32 -o "$output_file"
+done
 
 # Compile other necessary components
 # if [ -f "matmul/Matmul.dn" ]; then

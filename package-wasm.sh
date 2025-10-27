@@ -32,8 +32,26 @@ fi
 
 echo "Packaging WASM files..."
 
+# Build embed arguments for all .o files
+embed_args=""
+echo "Finding all compiled components..."
+
+# Find all .o files in wasm_output and create embed arguments
+while IFS= read -r -d '' file; do
+    # Get relative path from wasm_output
+    rel_path="${file#wasm_output/}"
+    
+    # Create embed argument: source@destination
+    embed_args="$embed_args --embed $file@$rel_path"
+    echo "  Adding: $file -> $rel_path"
+done < <(find wasm_output -name "*.o" -type f -print0)
+
+# Add components directory
+embed_args="$embed_args --embed $DANA_WASM_HOME/components@components"
+
 # Run file_packager command
-file_packager webserver/dana.wasm --embed wasm_output/App.o@App.o wasm_output/server/ServerWasm.o@ServerWasm.o --embed $DANA_WASM_HOME/components@components --js-output=webserver/file_system.js
+echo "Running file_packager..."
+file_packager webserver/dana.wasm $embed_args --js-output=webserver/file_system.js
 
 echo "=== WASM packaging complete ==="
 echo "Packaged files are in the 'webserver' directory:"
