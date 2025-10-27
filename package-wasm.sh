@@ -33,13 +33,10 @@ fi
 echo "Packaging WASM files..."
 
 # Run file_packager command
-file_packager dana.wasm \
-    --embed wasm_output/App.o@App.o \
-    --embed $DANA_WASM_HOME/components@components \
-    --js-output=webserver/file_system.js
+file_packager webserver/dana.wasm --embed wasm_output/App.o@App.o wasm_output/server/ServerWasm.o@ServerWasm.o --embed $DANA_WASM_HOME/components@components --js-output=webserver/file_system.js
 
 echo "=== WASM packaging complete ==="
-echo "Packaged files are in the 'wasm_package' directory:"
+echo "Packaged files are in the 'webserver' directory:"
 ls -la webserver/
 
 echo ""
