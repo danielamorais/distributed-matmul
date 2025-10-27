@@ -1,0 +1,39 @@
+---
+alwaysApply: true
+---
+Dana supports if statements, while loops and for loops to control conditional or iterative logic.
+
+If statements work exactly as in C or Java and can use the && and || operators to indicate logical and/or. You can also use else if and else blocks as in these languages.
+
+if (a)
+    {
+    out.println("a is true!")
+    }
+
+While loops allow you to loop through a section of logic many times based on some boolean condition, specified at the top of the loop.
+
+while (a)
+    {
+    out.println("a is true!")
+    }
+
+In the above example, the loop body will be executed iteratively while "a" evaluates to true.
+
+For loops allow you to specify an initial variable status, a condition, and a modification to that variable each time around the loop:
+
+for (int i = 0; i < 10; i++)
+    {
+    out.println("i is $(iu.intToString(i))")
+    }
+
+This is often used as a short hand to iterate over the loop logic a fixed number of times.
+
+Finally, the break statement can be used inside any kind of loop construct to break out of the loop when some other condition is encountered, for example:
+
+for (int i = 0; i < 10; i++)
+    {
+    out.println("i is $(iu.intToString(i))")
+    
+    if (programExiting)
+        break
+    }

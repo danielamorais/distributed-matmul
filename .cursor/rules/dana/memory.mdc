@@ -1,0 +1,30 @@
+---
+alwaysApply: true
+---
+Dana uses a hybrid approach to memory management. In most cases this will appear fully automated, where any allocated memory is automatically cleaned up for you by the language, and so there's nothing that you need to do as a programmer.
+
+However, understanding the detail of Dana's memory management approach will help you to know when you don't get full automation and so will need to explicitly assist with your own code.
+
+Dana defines two kinds of memory usage: managed and unmanaged.
+
+Managed memory is that which has been created by an object by instantiating data items, arrays, and objects. As long as these items are referenced by their creating object, we call them managed. Dana uses a simple reference-counting garbage collector for managed memory, which means that when the number of references to an element reach zero the system will automatically clean up the memory of that element. However, Dana will not check for circular references in managed memory and so the programmer is responsible for explicitly breaking any such circular references in order to allow memory to be cleaned up.
+
+Unmanaged memory is any data instance or array which has been passed to an object that did not create it, where the creating object no longer has a reference to it. In this case, the owner of the instance is no longer managing the memory, so Dana's full cycle-detecting garbage collector operates on these instances to automatically detect circular references and free the memory when it is no longer referenced.
+
+Cycle detection is relatively expensive, and in some cases will never be required even though a data type definition implies that it might happen. Dana automatically detects which data types do not need cycle detection in order to optimise execution time of a program, but in some cases it is not possible for Dana to statically determine this. Consider this example:
+
+data JSONElement {
+	char content[]
+	JSONElement children[]
+	}
+
+Here we have a field called children of type JSONElement, which could contain references to the parent instance. However, JSON documents are trees, so as a programmer we know that the children field will never actually be used in a way that could cause a reference graph cycle. In this case we can annotate the type with the nocycle keyword, which tells the garbage collector not to bother with cycle-detection on data instances of this type:
+
+data JSONElement nocycle {
+	char content[]
+	JSONElement children[]
+	}
+
+Note that using nocycle is not strictly necessary, and if you're not sure what to do then it's always better not to use it. If you are certain that you have a data type which looks like it could entail circular references, but you know that instances of that type never will do in practice, then using nocycle appropriately will improve the general performance of your program.
+
+Dana has a memory leak checker built in to the interpreter. To use it, launch your program with the command dana -mc MyProgram.o. This will report all instances in which managed memory was not properly cleaned up because it was left with circular references. Note that programs will run much more slowly with the leak checker turned on, so it should only be used during development.

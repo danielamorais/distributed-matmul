@@ -1,0 +1,27 @@
+---
+alwaysApply: true
+---
+Dana has a subset of types that are connected to the language itself and are known to the compiler and runtime for various purposes. Here we cover two interface types in this group: Destructor and Service.
+Destructors
+
+An object is destroyed when there are no more references to it. When this happens, a special "destructor" function is invoked on that object if it declares one. A destructor is declared by an object by declaring a secondary interface of type Destructor:
+
+component provides App(Destructor) {
+    int number
+    
+    void Destructor:destroy()
+        {
+        }
+    
+    int App:main(AppParam params[])
+        {
+        return 0
+        }
+    }
+
+This function can be used to perform any cleanup duties that should be done before the object is destroyed.
+The Service interface
+
+The Service interface is one which implies that a component wishes to be "started" and "stopped" when it joins and leaves the system. If a component provides this interface, the Service:start() function will be called before anything else, and the Service:stop() function will be called just before the component is unloaded from memory.
+
+These two functions can be used to initialise and destroy parts of the component's static state.

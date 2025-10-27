@@ -1,0 +1,45 @@
+---
+alwaysApply: true
+---
+In Dana we make a clear separation between data and behavior, with two distinct type hierarchies. This allows us to have continuity of data while we adapt behavior at runtime, but also leads to a set of other benefits around how we can uniformly handle and reflect over pure data types.
+
+As a result of this design choice, a common pattern in Dana programming is to declare a named required interface in a component header which contains a set of utility functions for operating over a given data type. A common example of this is data.IntUtil iu which allows us to operate on int types by converting them to and from strings:
+
+component provides App requires data.IntUtil iu {
+    int App:main(AppParam params[])
+        {
+        int k = iu.intFromString(params[0].string)
+        
+        return 0
+        }
+    }
+
+Due to how ubiquitous this design pattern is, Dana offers a general concept of auto-associative functions. This effectively allows you to call a function 'on' a data type (including primitive types) and makes a lot of code much more concise. If a function call is made on a data type, associative functions work by searching each function of all required interfaces with handle names (like iu), and checking to see if any of those functions takes the given type as its first parameter. If so, the function can be called as if the given data type is an object, and the instance of that data type will be passed in as the first parameter - which no longer needs to be specified.
+
+Using this technique, the above program can also therefore be expressed as:
+
+component provides App requires data.IntUtil iu {
+    int App:main(AppParam params[])
+        {
+        int k = params[0].string.intFromString()
+        
+        return 0
+        }
+    }
+
+We take this concept a step further to support the easy expansion of string expressions. In Dana you can place function calls or variables directly in strings prefixed with $ as follows:
+
+component provides App requires data.IntUtil iu {
+    int App:main(AppParam params[])
+        {
+        int k = params[0].string.intFromString()
+        
+        char str[] = "some string and the value of $k here"
+        
+        return 0
+        }
+    }
+
+When expanding string expressions, the Dana compiler assumes that the associative function makeString should be called on whatever type is in the string expression -- effectively converting the above expression to k.makeString(). Because the data.IntUtil interface has a function defined as char[] makeString(int v) this will expand the string expression, using IntUtil, with a function to convert the integer to a string - expanding the string expression to iu.makeString(k).
+
+If an associative function has more than one parameter, these parameters are simply supplied by the programmer as part of the function call (ignoring the first parameter). While the full-form of function calling is often still used in Dana programs (where the required interface handle is used as the relative entity on which a call is make), this general concept can make code much shorter and simpler to read, as long as the programmer is aware of which functions are being associated from which interfaces. 

@@ -1,0 +1,18 @@
+---
+alwaysApply: true
+---
+Dana supports runtime exceptions, but implements them as advisory. Exceptions in Dana cannot be caught or otherwise detected to have happened at runtime, and never result in system termination. Instead, exceptions are inherently contained to the function in which they occur, causing that particular function to abort and return the default value of its return type (0 for int, 0.0 for dec, false for bool, null for arrays, objects and data types, etc.).
+
+Exceptions in Dana are thrown as follows:
+
+int MyInterface:myFunction(char param[])
+    {
+    if (param == null)
+        throw new Exception("parameter was empty")
+    
+    return param.arrayLength
+    }
+
+The result of triggering this exception is that the function returns immediately at the "throw" line, and automatically returns the default value of its return type, which is 0 in this case. No further effects of the exception are experienced by the running program.
+
+Dana has only one "kind" of exception (there are no sub-types) and the text given with the exception is intended purely for human (or other monitoring) interpretation about issues occurring in the program.

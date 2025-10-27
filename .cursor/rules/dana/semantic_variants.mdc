@@ -1,0 +1,28 @@
+---
+alwaysApply: true
+---
+Semantic variants
+
+Dana is designed to support the existence of multiple implementation variants of the same interface, and adaptation between these variants at runtime. In this case all of the implementations are expected to be equivalent in the task that they perform.
+
+Sometimes, however, different component implementations would naturally have the same interface but perform semantically different tasks to other implementations of that interface - such as image file parsers that read different image formats, or encoding components that encode and decode data into different standards like Base 64 or UTF-16. In these cases it does not make sense to adapt between different implementations because they would break the program.
+
+For this kind of design pattern, Dana supports semantic variants of both provided and required interfaces. A component can declare a provided interface with a semantic variant as follows:
+
+component provides Encoder:base64  {
+    
+    char[] Encoder:encode(char content[])
+        {
+        //...
+        }
+    }
+
+A component can then require such a specific semantic variant using the same notation on a required interface:
+
+component provides App requires Encoder:base64 encoder  {
+    
+    }
+
+Here the component will be connected to the default implementation of an Encoder interface with the base64 semantic.
+
+For semantic variant implementations to be automatically discovered by Dana's runtime linker, components should use file names in the format Interface.variant.dn, compiled to Interface.variant.o. The above component would be saved in a file Encoder.base64.dn, and compiled to the file Encoder.base64.o.

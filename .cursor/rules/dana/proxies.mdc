@@ -1,0 +1,92 @@
+---
+alwaysApply: true
+---
+As part of its reflection system, Dana supports dynamic proxies and dynamic function calls, as well as dynamic event emission.
+Dynamic proxies
+
+Dynamic proxies are built using a combination of two special interfaces: lang.Proxy and lang.Morph, both of which are part of Dana's standard library.
+
+A component can provide lang.Proxy as one of its interfaces, and any required interface (of any type) can then be successfully wired to this provided interface:
+
+component provides lang.Proxy requires io.Output out, data.IntUtil iu {
+
+    void Proxy:construct(FunctionCall callData, Data result)
+        {
+        function(callData, result)
+        }
+    
+    void Proxy:function(FunctionCall callData, Data result)
+        {
+        out.println(" [[intercept $(callData.name)]]")
+        }
+    }
+
+As shown above, the lang.Proxy interface has two functions to implement: construct and function. The construct function is called when an interface is instantiated that has an explicitly declared constructor.
+
+The function function is called when any other function of the required interface is called. The callData parameter to both of these functions provides all of the information about the actual function call that has been made, including its type and parameters. The result parameter provides a place to store the return value of the function, if any. The result parameter is a dynamically-constructed data type, with a single field which is of the type of the return value of the function that has been called.
+
+This represents one 'side' of a dynamic proxy. The other side uses lang.Morph, which is a special required interface type that can be wired to any provided interface type. A morph instance must have functions called on it dynamically (rather than by name; see below) since the lang.Morph interface type does not have any "real" functions of its own.
+
+Putting everything together, a fully generic dynamic proxy would look like this:
+
+component provides lang.Proxy(composition.InterceptEvents) requires io.Output out, data.IntUtil iu, lang.Morph morph {
+    
+    eventsink EventPass(EventData ed)
+        {
+        out.println(" [[intercept event $(ed.type)]]")
+        
+        emitevent:.ed.type(ed.details)
+        }
+    
+    void Proxy:construct(FunctionCall callData, Data result)
+        {
+        sinkevent EventPass(morph)
+        
+        out.print(" [[construct]]")
+        
+        function(callData, result)
+        }
+    
+    void Proxy:function(FunctionCall callData, Data result)
+        {
+        out.println(" [[intercept $(callData.name)]]")
+        
+        TypeField cNdx = callData.index
+        
+        //check for a void function; collect the return value if it isn't one
+        if (callData.type.fields[0].type.class != Type.INTEGER || callData.type.fields[0].type.size != 0)
+            result:.0 = morph:.cNdx(callData.params)
+            else
+            morph:.cNdx(callData.params)
+        }
+    
+    }
+
+Finally, to support runtime adaptation, our standard library adaptation framework uses the interface InterceptEvents as a secondary interface on objects to notify an interceptor that it has been injected between two components. This can be used to track the morph instance that should actually be used, as follows:
+
+void InterceptEvents:setTarget(Object o)
+    {
+    morph = o
+    sinkevent EventPass(morph)
+    }
+
+Dynamic function calls
+
+As shown above, Dana supports both dynamic calling of functions and emission of events.
+
+To dynamically call a function on an object, the notation object:.index(params) is used. Here, index is the index of the function call to invoke, and params is a data instance containing a set of fields representing the parameters to pass to the function call.
+
+A dynamic call returns a value of the type returned by the function that was called (or void if no return value is present). When assigning something from a dynamic call, you must assign it into a dynamically-selected field of a data instance, for example:
+
+data MyResult {
+	Data result
+	}
+
+...
+
+MyResult result = new MyResult()
+result:.0 = myObject:.cNdx(paramsInstance)
+
+This is because the runtime needs to be able to perform a dynamic type-check on the result of the dynamic call, rather than the compiler performing this check at compile-time.
+
+Events can also be dynamically emitted using the notation emitevent:.index(params) for which index is the event index in this object, and params is a data instance representing any parameter to the event.

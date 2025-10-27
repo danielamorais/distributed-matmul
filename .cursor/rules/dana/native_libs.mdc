@@ -1,0 +1,218 @@
+---
+alwaysApply: true
+---
+Writing Dana native libraries
+
+Dana native libraries allow you to call C code from Dana, as if that C code were itself a Dana component. This is useful when you need to interface directly with OS or hardware-level functionality in a way not provided by the Dana standard library. All of our current native libraries are available as open-source code at https://github.com/projectdana/native_libraries.
+
+The typical process to create a native library involves (1) a regular Dana interface, (2) a wrapper component implementing that interface, and talking to the native library through a Dana library interface, and (3) a native library which implements the native library interface.
+
+Create a new directory for your project, and create a resources folder in that directory as usual.
+
+We begin by defining a regular Dana interface for our wrapper component:
+
+interface MyWrapper{
+    void doSomething()
+    }
+
+Write the above code in a text file, save it as MyWrapper.dn, and place it in the resources folder.
+
+Next we create the wrapper component which implements the above interface:
+
+interface MyLib{
+    void libFunction()
+    }
+    
+component provides MyWrapper requires native MyLib myLib {
+    
+    void MyWrapper:doSomething() {
+        myLib.libFunction()
+        }
+    
+    }
+
+We place this source file in the root directory of your project.
+
+Finally we create the native library itself. Start by downloading the native libraries repository, which contains general library APIs and helper functions, plus a Makefile that we'll be extending. Extract the repository and in the extracted folder create a new file called MyLib.c. This will be our native library code, which will implement the MyLib interface declared above. The naming here is important: Dana will search for a compiled native library with a name (and platform) that matches the native interface it is trying to link against.
+
+In the MyLib.c file, write the following code:
+
+#include "dana_lib_defs.h"
+#include "nli_util.h"
+#include "vmi_util.h"
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+void MyLib_setInterfaceFunction(char* name, void* ptr);
+Interface* MyLib_getPublicInterface();
+const DanaType* MyLib_getTypeDefinition(char* name);
+
+static CoreAPI *api;
+
+INSTRUCTION_DEF op_my_function(FrameData* cframe)
+    {
+    printf("A native call!");
+    return RETURN_OK;
+    }
+    
+Interface* load(CoreAPI* capi)
+    {
+    api = capi;
+    MyLib_setInterfaceFunction("libFunction", op_my_function);	
+    return MyLib_getPublicInterface();
+    }
+
+void unload()
+    {	
+    }
+
+Don't worry about the RETURN_OK line; this is a standard way to return from a native library function and indicates to the Dana runtime that everything went OK with the native call. Returning actual values back to Dana code is handled via helper functions (see below).
+
+Next we need to use the Dana compiler to generate a C file containing all of the glue code between our native library and the Dana runtime. To do this we open a command prompt in the same directory as our wrapper component (yes, the component, not the interface), and type:
+
+dnc MyWrapper.dn -gni
+
+Assuming that you saved your component in a file called MyWrapper.dn. This will create a new text file called MyLib_dni.c. It will also output the naming of the three "setup" helper functions that we forward-declared at the top of our native library. Copy the file MyLib_dni.c to the libraries repository (i.e. the same folder as your library code). You will need to re-run the above compiler command any time you change the definition of the interface type which interacts with the native library. Now we create a makerule for this library in the Makefile of the libraries repository. Open Makefile in a text editor and add the rule:
+
+    my_new_lib:
+        $(CC) -Os -s MyLib_dni.c $(API_PATH)/vmi_util.c MyLib.c -o MyLib[$(PLATFORM).$(CHIP)].dnl $(STD_INCLUDE) $(CCFLAGS)
+        $(CP_CMD) MyLib[$(PLATFORM).$(CHIP)].dnl "$(DANA_HOME)/resources-ext"
+
+And run the makerule with:
+
+make my_new_lib
+
+Now, if you write a quick test program to call your wrapper component's doSomething() function, you should see the text printed from the native library. Simple :-)
+
+The creation of every native library follows the same procedure.
+Passing parameters
+
+You can pass parameters into native library calls from Dana, and also return values from them back to Dana code. The CoreAPI reference that is passed into the load() function has a set of functions to help with this for the most common data types. You can see the details of the CoreAPI functions in the dana_lib_api.h, in the dana_api_1.x/ folder of the native libraries repository.
+
+Let's assume that our library API, inside our wrapper component, had been defined in Dana as follows:
+
+interface MyLib{
+    int libFunction(char input[], int value)
+    }
+
+Remember that whenever you change the library interface definition you'll need to regenerate the C header using dnc MyWrapper.dn -gni
+
+In the native library, we can access the parameters passed into this function using helper functions in the CoreAPI instance:
+
+ unsigned char* (*getParamRaw)(FrameData* f, size_t paramIndex);
+ size_t (*getParamInt)(FrameData* f, size_t paramIndex);
+ double (*getParamDec)(FrameData* f, size_t paramIndex);
+ DanaEl* (*getParamEl)(FrameData* f, size_t paramIndex);
+
+The first of these helper functions gets a reference to the raw memory area which contains the data of the parameter; the second two function get parameters of type int and dec; and the function getParamEl is used to get parameters that are a data instance, array instance, or object instance.
+
+In our example, we have one int parameter and one char[], so we use getParamInt and getParamEl, respectively, to get the parameters of these types.
+
+INSTRUCTION_DEF op_my_function(FrameData* cframe)
+    {
+    printf("A native call!");
+    
+    DanaEl* array = api -> getParamEl(cframe, 0);
+    size_t param2 = api -> getParamInt(cframe, 1);
+    
+    return RETURN_OK;
+    }
+
+When we're dealing with an array, we can use another set of helper functions on CoreAPI to examine the contents of that array, for example:
+
+ unsigned char* (*getArrayContent)(DanaEl* array);
+ size_t (*getArrayLength)(DanaEl* array);
+ unsigned char* (*getArrayCellRaw)(DanaEl* array, size_t index);
+ size_t (*getArrayCellInt)(DanaEl* array, size_t index);
+ double (*getArrayCellDec)(DanaEl* array, size_t index);
+ DanaEl* (*getArrayCellEl)(DanaEl* array, size_t index);
+
+Because character arrays in Dana are not null-terminated, it is often useful to convert them into a null-terminated character array that can be passed in to a range of C functions. The vmi_util.h file has a helper function to do this for a parameter, called x_getParam_char_array(), which we can use to get a C string:
+
+INSTRUCTION_DEF op_my_function(FrameData* cframe)
+    {
+    printf("A native call!");
+    
+    char* str = x_getParam_char_array(api, cframe, 0);
+    size_t param2 = api -> getParamInt(cframe, 1);
+    
+    free(str);
+    
+    return RETURN_OK;
+    }
+
+The CoreAPI instance also has a range of helper functions for examining fields of data instances passed in as parameters, using a similar getRaw/getInt/getDec/getEl style.
+Returning values
+
+We can also return values from our library functions. In our above example, our interface function promises to return an int, but our native library code doesn't do this. The CoreAPI instance has a set of helper functions to handle returns of the four types we've seen for parameters:
+
+ void (*returnRaw)(FrameData* f, unsigned char *val, size_t len);
+ void (*returnInt)(FrameData* f, size_t val);
+ void (*returnDec)(FrameData* f, double val);
+ void (*returnEl)(FrameData* f, DanaEl* val);
+
+To return an int, we would therefore update our native library code to this:
+
+INSTRUCTION_DEF op_my_function(FrameData* cframe)
+    {
+    printf("A native call!");
+    
+    char* str = x_getParam_char_array(api, cframe, 0);
+    size_t param2 = api -> getParamInt(cframe, 1);
+    
+    free(str);
+    
+    api -> returnInt(cframe, 92);
+    
+    return RETURN_OK;
+    }
+
+Next, let's look at how to return more complex values from native library functions. Again we can use helper functions to do this. Let's update our Dana library interface inside our wrapped component to now be defined like this:
+
+interface MyLib{
+    char[] libFunction(char input[], int value)
+    }
+
+This is more complex than returning a simple integer, since we need to instantiate an array and populate its contents. In order to do that we also need some type information to instantiate the array.
+
+we first need to ask the Dana runtime for a type record of the data type we're intending to use. We can do this in the native library load() function and store the result in a global variable:
+
+static GlobalTypeLink* charArrayGT = NULL;
+
+Interface* load(CoreAPI* capi)
+    {
+    api = capi;
+    charArrayGT = api -> resolveGlobalTypeMapping(getTypeDefinition("char[]"));
+    MyLib_setInterfaceFunction("libFunction", op_my_function);	
+    return MyLib_getPublicInterface();
+    }
+
+void unload()
+	{
+	api -> decrementGTRefCount(charArrayGT);
+	}
+
+We also tell the Dana runtime that we're done with our reference to that type in our unload() function.
+
+We can now use this type to instantiate a new char array, to return a string of characters from our native library call:
+
+INSTRUCTION_DEF op_my_function(VFrame* cframe)
+    {
+    printf("A native call!");
+    char *param1 = x_getParam_char_array(api, cframe, 0);
+    size_t param2 = api -> getParamInt(cframe, 1);
+    
+    printf("Parameters were '%s' and %u\n", param1, param2);
+    
+    DanaEl* array = api -> makeArray(charArrayGT, 10);
+    unsigned char* cnt = api -> getArrayContent(array);
+    memcpy(cnt, "abcdefghij", 10);
+    api -> returnEl(cframe, array);
+    
+    free(param1);
+    
+    return RETURN_OK;
+    }
+
+Take a look at the source code of dana_lib_api.h to see the full set of types that can be easily passed as parameters and returned. Native libraries can accept and return any Dana type, and can set the fields of data types; use the existing native libraries in the repository as a reference for more advanced parameter and return behaviour. They collectively do just about everything you might want to, so play around and ask questions when you get stuck.

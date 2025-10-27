@@ -1,0 +1,29 @@
+---
+alwaysApply: true
+---
+
+# Dana Language Rules
+
+## 1. Core Syntax & Structure
+- All Dana source code files must use the `.dn` extension.
+- The top-level structure of a file is a `component` declaration.
+- A component must declare the interfaces it `provides` (functionality it implements) and `requires` (functionality it depends on).
+- Example: `component provides App requires io.Output out, io.File { ... }`
+
+## 2. Program Entry Point (Main)
+- The main entry point for a runnable program is a function named `main`.
+- This `main` function must be part of the `App` interface, which the component `provides`.
+- The Dana runtime automatically looks for a component providing the `App` interface and executes its `main` function.
+- The syntax for implementing an interface function is: `InterfaceType:functionName(params) { ... }`
+- Example: `int App:main(AppParam params[]) { ... }`
+
+## 3. Key Concepts: Interface Instantiation
+This is the most important concept:
+- **Automatic Instantiation (for globals):** If a `required` interface is given a name in the component declaration (e.g., `requires io.Output out`), Dana automatically instantiates it as a global variable (named `out`). This *only* works for interfaces that do *not* have a constructor.
+- **Manual Instantiation (with `new`):** If a `required` interface (e.g., `io.File`) *does* have a constructor, it *must* be instantiated manually inside a function using the `new` operator.
+- Example: `File f = new File("out.txt", File.CREATE)`
+
+## 4. Build & Run Commands
+- **Compile:** `dnc FileName.dn`
+- **Run:** `dana ComponentName` (Note: Use the component name, e.g., `MyApp`, *not* the file name `MyApp.dn`).
+```

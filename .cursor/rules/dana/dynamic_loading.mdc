@@ -1,0 +1,405 @@
+---
+alwaysApply: true
+---
+
+Dana is designed to provide a unique level of runtime adaptation for software. Dana programs are built from a collection of strongly-separated components that communicate by abstract interfaces; these components can be seamlessly added to and removed from a running system at any time.
+
+The previous sections have relied upon Dana's automated linking system to make programs quick and easy to write. The next few sections put the loading and linking of components in your hands to carry out as you wish. This adds a little complexity but also provides the basis for very powerful behaviour including self-adaptive systems which can perform advanced duties such as optimising themselves in real-time. As a point of interest, Dana's automated linking system does not have access to any special capablities and is itself written using the same functionality that we introduce in the next few sections of documentation.
+
+The fundamental enabler of runtime adaptation is the ability to load and unload components at runtime and to interact with those components using dynamic interface lookup and dynamic object instantiation. This section covers these topics in detail, while the next sections cover the construction of a complete meta-composer and the use of runtime adaptation mechanics.
+
+We'll start by making the component that we want to load dynamically and the interface that it will provide, through which we'll interact with it. Create a new directory for this example called "loading" and within that directory make a new folder called "resources".
+
+In the resources folder, download the interface:
+
+Adder.dn
+
+interface Adder{
+    int add(int a, int b)
+    }
+
+And in the loading folder, download the component:
+
+MyAdder.dn
+
+component provides Adder{
+    int Adder:add(int a, int b)
+        {
+        return a + b
+        }
+    }
+
+Compile the above component as normal.
+Dynamic loading
+
+Components are loaded into memory by a "loader". This means that the machine code of the component is copied from secondary storage into main memory. Just like with any other component, we use the loader by adding a required interface, in this case of type Loader.
+
+uses Adder
+
+component provides App requires io.Output out, data.IntUtil intUtil, Loader loader {
+
+    int App:main(AppParam params[])
+        {
+        IDC com = loader.load("MyAdder.o")
+        
+        //dynamically instantiate an object using an interface from com (see below)...
+        
+        return 0
+        }
+    }
+
+We've also filled in the details of loading another component at runtime using the loader. The loader returns a special interface of type IDC. All components automatically "provide" this special interface. We can use this interface to query the component for other interfaces that it may provide.
+
+Note that in Dana, you can safely load exactly the same component multiple times, and each one will be a completely distinct, separate copy of the component. Loaded components are automatically unloaded when they no longer have any references.
+Dynamic interface lookup
+
+Once we've loaded a component into main memory, giving us a generic IDC reference, we can query it for interfaces that it provides as well as interfaces that it requires. Interface querying basically works in the same way for both of these variants but for now we'll just focus on the provided ones.
+
+We query a provided interface using the IDC function:
+
+com.hasProvides("InterfaceType")
+
+Dynamic instantiation
+
+Putting everything together, we interact with a dynamically loaded component by instantiating an object of a type matching one of that component's provided interfaces. This is very similar to the way in which we normally instantiate objects, except that we specify the interface with which to complete the instantiation.
+
+Adder a = new Adder() from com
+
+The "from" notation here enables us to specify the particular interface, of a particular component, with which to instantiate the object.
+
+The complete program then looks like this:
+
+uses Adder
+
+component provides App requires io.Output out, data.IntUtil intUtil, Loader loader {
+    
+    int App:main(AppParam params[])
+        {
+        IDC com = loader.load("MyAdder.o")
+        
+        Adder a = new Adder() from com
+        
+        int q = a.add(5, 6)
+        
+        out.println("result: $(intUtil.intToString(q))")
+        
+        return 0
+        }
+    }
+
+Compile and run the program and it should display the correct value from our adder component. Try using different adder components and loading those instead or make your own more complex components to dynamically load.
+Loading and linking dependencies
+
+In the above example we dynamically loaded a simple component that had no dependencies (no required interfaces). It is important to understand that components which are dynamically loaded do not benefit from automated linking of any such dependencies and, without loading and linking these, a runtime warning will be generated if a loaded component attempts to use a dependency that isn't linked. This is done to allow the programmer flexibility in how to resolve dependencies, the specific details of which are normally determined by a meta-program such as PAL.
+
+As a quick way to dynamically load a component and resolve all of its dependencies, by loading and linking default components for those dependencies, you can use the composition.RecursiveLoader API. This returns an array of all loaded components, as well as a reference to the "main component" that you requested to load. It is used as follows:
+
+component provides App requires io.Output out, data.IntUtil intUtil, composition.RecursiveLoader loader {
+    
+    int App:main(AppParam params[])
+        {
+        LoadedComponents lc = loader.load("MyAdder.o")
+        IDC com = lc.mainComponent
+        
+        //dynamically instantiate an object using an interface from com (see below)...
+        
+        return 0
+        }
+    }
+
+The RecursiveLoader is an open-source component in Dana's standard library so you can see for yourself how it works.Searching for possible implementations
+
+Dana is designed to support seamless adaptation between multiple different implementations of the same interface. The standard library has a set of APIs to support easy search for implementations as follows.
+
+Let's imagine that you want to load a component in the file MyComponent.o; we might do this using:
+
+component provides App requires io.Output out, Loader loader {
+    
+    int App:main(AppParam params[])
+        {
+        IDC com = loader.load("MyComponent.o")
+        
+        return 0
+        }
+    }
+
+We'd then like to look at the required interfaces of this component (i.e., it dependencies) and search for any components that we can use to fulfill those dependencies. With the aid of a helper function to extract required interfaces from a compiled component, we can use a combination of composition.ObjectWriter, data.json.JSONParser, and composition.Search to quickly find all alternatives:
+
+data ReqIntf {
+    char package[]
+    char alias[]
+    }
+
+component provides App requires io.Output out, Loader loader,
+            composition.ObjectWriter, composition.Search search, data.json.JSONParser parser {
+        
+    ReqIntf[] getRequiredInterfaces(char com[])
+        {
+        ReqIntf result[]
+        ObjectWriter reader = new ObjectWriter(com)
+        InfoSection section = reader.getInfoSection("DNIL", "json")
+        JSONElement document = parser.parseDocument(section.content)
+        JSONElement requiredInterfaces = parser.getValue(document, "requiredInterfaces")
+        
+        if (requiredInterfaces != null)
+            {
+            for (int i = 0; i < requiredInterfaces.children.arrayLength; i++)
+                {
+                JSONElement ri = requiredInterfaces.children[i]
+                char package[] = parser.getValue(ri, "package").value
+                char alias[] = parser.getValue(ri, "alias").value
+                result = new ReqIntf[](result, new ReqIntf(package, alias))
+                }
+            }
+        
+        return result
+        }
+    
+    int App:main(AppParam params[])
+        {
+        IDC com = loader.load("MyComponent.o")
+        ReqIntf dependencies[] = getRequiredInterfaces("MyComponent.o")
+        
+        for (int i = 0; i < dependencies.arrayLength; i++)
+            {
+            String results[] = search.getComponents(dependencies[i].package)
+            }
+        
+        return 0
+        }
+    }
+
+Our helper function uses a feature of Dana's compiled component file format, in which we store meta data in "information sections" of the file. Dana uses a standard information section named "DNIL" which lists the interfaces that are both provided and required by the component, represented in a JSON structure. Interfaces in this structure have a "package" and an "alias" along with structured type information. The package is the full path to the interface, while the alias is the name by which we can dynamically query the interface on the component. Internally, note that Dana does not care whether the package or alias of a required and provided interface match up in order to be able to connect them together; instead Dana only checks that the two interface types are structurally compatible.
+
+In the main method, the array results now contains a list of relative file paths to components that implement each required interface, searching both locally and in the standard library. You can also use the composition.Search API to search in specific directories.
+
+Now that we've found some options, we can wire each dependency up to the first option on this list, by loading the component that we'd like to connect to and then using the IDC function wire:
+
+data ReqIntf {
+    char package[]
+    char alias[]
+    }
+
+component provides App requires io.Output out, Loader loader,
+            composition.ObjectWriter, composition.Search search, data.JSON.JSONParser parser {
+        
+    ReqIntf[] getRequiredInterfaces(char com[]) {...}
+    
+    int App:main(AppParam params[])
+        {
+        IDC com = loader.load("MyComponent.o")
+        ReqIntf dependencies[] = getRequiredInterfaces("MyComponent.o")
+        
+        for (int i = 0; i < dependencies.arrayLength; i++)
+            {
+            String results[] = search.getComponents(dependencies[i].package)
+            
+            IDC ncom = loader.load(results[i].string)
+            com.wire(dependencies[i].alias, ncom, dependencies[i].alias)
+            }
+        
+        return 0
+        }
+    }
+
+We can later use runtime adaptation to adapt these wirings to point to different components while the program is running. To build a complete system we could also need to recursively apply the above procedure to the components chosen to satisfy dependencies as well, wiring up their dependencies and so on.Dana is designed to provide a unique level of runtime adaptation for software. Dana programs are built from a collection of strongly-separated components that communicate by abstract interfaces; these components can be seamlessly added to and removed from a running system at any time.
+
+The previous sections have relied upon Dana's automated linking system to make programs quick and easy to write. The next few sections put the loading and linking of components in your hands to carry out as you wish. This adds a little complexity but also provides the basis for very powerful behaviour including self-adaptive systems which can perform advanced duties such as optimising themselves in real-time. As a point of interest, Dana's automated linking system does not have access to any special capablities and is itself written using the same functionality that we introduce in the next few sections of documentation.
+
+The fundamental enabler of runtime adaptation is the ability to load and unload components at runtime and to interact with those components using dynamic interface lookup and dynamic object instantiation. This section covers these topics in detail, while the next sections cover the construction of a complete meta-composer and the use of runtime adaptation mechanics.
+
+We'll start by making the component that we want to load dynamically and the interface that it will provide, through which we'll interact with it. Create a new directory for this example called "loading" and within that directory make a new folder called "resources".
+
+In the resources folder, download the interface:
+
+Adder.dn
+
+interface Adder{
+    int add(int a, int b)
+    }
+
+And in the loading folder, download the component:
+
+MyAdder.dn
+
+component provides Adder{
+    int Adder:add(int a, int b)
+        {
+        return a + b
+        }
+    }
+
+Compile the above component as normal.
+Dynamic loading
+
+Components are loaded into memory by a "loader". This means that the machine code of the component is copied from secondary storage into main memory. Just like with any other component, we use the loader by adding a required interface, in this case of type Loader.
+
+uses Adder
+
+component provides App requires io.Output out, data.IntUtil intUtil, Loader loader {
+
+    int App:main(AppParam params[])
+        {
+        IDC com = loader.load("MyAdder.o")
+        
+        //dynamically instantiate an object using an interface from com (see below)...
+        
+        return 0
+        }
+    }
+
+We've also filled in the details of loading another component at runtime using the loader. The loader returns a special interface of type IDC. All components automatically "provide" this special interface. We can use this interface to query the component for other interfaces that it may provide.
+
+Note that in Dana, you can safely load exactly the same component multiple times, and each one will be a completely distinct, separate copy of the component. Loaded components are automatically unloaded when they no longer have any references.
+Dynamic interface lookup
+
+Once we've loaded a component into main memory, giving us a generic IDC reference, we can query it for interfaces that it provides as well as interfaces that it requires. Interface querying basically works in the same way for both of these variants but for now we'll just focus on the provided ones.
+
+We query a provided interface using the IDC function:
+
+com.hasProvides("InterfaceType")
+
+Dynamic instantiation
+
+Putting everything together, we interact with a dynamically loaded component by instantiating an object of a type matching one of that component's provided interfaces. This is very similar to the way in which we normally instantiate objects, except that we specify the interface with which to complete the instantiation.
+
+Adder a = new Adder() from com
+
+The "from" notation here enables us to specify the particular interface, of a particular component, with which to instantiate the object.
+
+The complete program then looks like this:
+
+uses Adder
+
+component provides App requires io.Output out, data.IntUtil intUtil, Loader loader {
+    
+    int App:main(AppParam params[])
+        {
+        IDC com = loader.load("MyAdder.o")
+        
+        Adder a = new Adder() from com
+        
+        int q = a.add(5, 6)
+        
+        out.println("result: $(intUtil.intToString(q))")
+        
+        return 0
+        }
+    }
+
+Compile and run the program and it should display the correct value from our adder component. Try using different adder components and loading those instead or make your own more complex components to dynamically load.
+Loading and linking dependencies
+
+In the above example we dynamically loaded a simple component that had no dependencies (no required interfaces). It is important to understand that components which are dynamically loaded do not benefit from automated linking of any such dependencies and, without loading and linking these, a runtime warning will be generated if a loaded component attempts to use a dependency that isn't linked. This is done to allow the programmer flexibility in how to resolve dependencies, the specific details of which are normally determined by a meta-program such as PAL.
+
+As a quick way to dynamically load a component and resolve all of its dependencies, by loading and linking default components for those dependencies, you can use the composition.RecursiveLoader API. This returns an array of all loaded components, as well as a reference to the "main component" that you requested to load. It is used as follows:
+
+component provides App requires io.Output out, data.IntUtil intUtil, composition.RecursiveLoader loader {
+    
+    int App:main(AppParam params[])
+        {
+        LoadedComponents lc = loader.load("MyAdder.o")
+        IDC com = lc.mainComponent
+        
+        //dynamically instantiate an object using an interface from com (see below)...
+        
+        return 0
+        }
+    }
+
+The RecursiveLoader is an open-source component in Dana's standard library so you can see for yourself how it works.Searching for possible implementations
+
+Dana is designed to support seamless adaptation between multiple different implementations of the same interface. The standard library has a set of APIs to support easy search for implementations as follows.
+
+Let's imagine that you want to load a component in the file MyComponent.o; we might do this using:
+
+component provides App requires io.Output out, Loader loader {
+    
+    int App:main(AppParam params[])
+        {
+        IDC com = loader.load("MyComponent.o")
+        
+        return 0
+        }
+    }
+
+We'd then like to look at the required interfaces of this component (i.e., it dependencies) and search for any components that we can use to fulfill those dependencies. With the aid of a helper function to extract required interfaces from a compiled component, we can use a combination of composition.ObjectWriter, data.json.JSONParser, and composition.Search to quickly find all alternatives:
+
+data ReqIntf {
+    char package[]
+    char alias[]
+    }
+
+component provides App requires io.Output out, Loader loader,
+            composition.ObjectWriter, composition.Search search, data.json.JSONParser parser {
+        
+    ReqIntf[] getRequiredInterfaces(char com[])
+        {
+        ReqIntf result[]
+        ObjectWriter reader = new ObjectWriter(com)
+        InfoSection section = reader.getInfoSection("DNIL", "json")
+        JSONElement document = parser.parseDocument(section.content)
+        JSONElement requiredInterfaces = parser.getValue(document, "requiredInterfaces")
+        
+        if (requiredInterfaces != null)
+            {
+            for (int i = 0; i < requiredInterfaces.children.arrayLength; i++)
+                {
+                JSONElement ri = requiredInterfaces.children[i]
+                char package[] = parser.getValue(ri, "package").value
+                char alias[] = parser.getValue(ri, "alias").value
+                result = new ReqIntf[](result, new ReqIntf(package, alias))
+                }
+            }
+        
+        return result
+        }
+    
+    int App:main(AppParam params[])
+        {
+        IDC com = loader.load("MyComponent.o")
+        ReqIntf dependencies[] = getRequiredInterfaces("MyComponent.o")
+        
+        for (int i = 0; i < dependencies.arrayLength; i++)
+            {
+            String results[] = search.getComponents(dependencies[i].package)
+            }
+        
+        return 0
+        }
+    }
+
+Our helper function uses a feature of Dana's compiled component file format, in which we store meta data in "information sections" of the file. Dana uses a standard information section named "DNIL" which lists the interfaces that are both provided and required by the component, represented in a JSON structure. Interfaces in this structure have a "package" and an "alias" along with structured type information. The package is the full path to the interface, while the alias is the name by which we can dynamically query the interface on the component. Internally, note that Dana does not care whether the package or alias of a required and provided interface match up in order to be able to connect them together; instead Dana only checks that the two interface types are structurally compatible.
+
+In the main method, the array results now contains a list of relative file paths to components that implement each required interface, searching both locally and in the standard library. You can also use the composition.Search API to search in specific directories.
+
+Now that we've found some options, we can wire each dependency up to the first option on this list, by loading the component that we'd like to connect to and then using the IDC function wire:
+
+data ReqIntf {
+    char package[]
+    char alias[]
+    }
+
+component provides App requires io.Output out, Loader loader,
+            composition.ObjectWriter, composition.Search search, data.JSON.JSONParser parser {
+        
+    ReqIntf[] getRequiredInterfaces(char com[]) {...}
+    
+    int App:main(AppParam params[])
+        {
+        IDC com = loader.load("MyComponent.o")
+        ReqIntf dependencies[] = getRequiredInterfaces("MyComponent.o")
+        
+        for (int i = 0; i < dependencies.arrayLength; i++)
+            {
+            String results[] = search.getComponents(dependencies[i].package)
+            
+            IDC ncom = loader.load(results[i].string)
+            com.wire(dependencies[i].alias, ncom, dependencies[i].alias)
+            }
+        
+        return 0
+        }
+    }
+
+We can later use runtime adaptation to adapt these wirings to point to different components while the program is running. To build a complete system we could also need to recursively apply the above procedure to the components chosen to satisfy dependencies as well, wiring up their dependencies and so on.

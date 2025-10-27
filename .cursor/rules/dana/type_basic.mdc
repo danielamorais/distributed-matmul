@@ -1,0 +1,248 @@
+---
+alwaysApply: true
+---
+Type System Overview
+
+Dana generally separates data types from types which describe functionality, with two distinct type heirarchies. This is primarily done so that we can hot-swap code while maintaining common data formats between alternative implementations. Dana supports primitive types, data types, and interface types:
+
+Both data and interface types support single inheritance. All data types automatically inherit from the base type Data, and all interface types automatically inherit from the base type Object.
+Primitive types
+
+Dana has two primitive types: unsigned integers, and signed decimal numbers.
+
+Integers are able only to represent positive numbers, while decimal types can represent both positive and negative numbers. Integers of different sizes are also used to represent characters, strings and boolean values.
+
+The default integer type is int but there are various other sizes and uses available. An integer variable declared as:
+
+int a
+
+Is an unsigned integer with a bit-width matching that of the host machine. On a 32-bit machine this is a 32-bit unsigned integer, or on a 64-bit machine this is a 64-bit unsigned integer.
+
+Specific byte-widths of integer are also available from int1 up to int512, with each one being double the width of the previous one.
+
+Unsigned integers are also used to represent characters, bytes, and boolean values. A variable declared as:
+
+bool b
+
+Is equivalent to a 1-byte integer int1.
+
+Characters are declared using the char type:
+
+char c
+
+Which is also equivalent to int1. Variables of type char have some particular semantic meaning to the Dana compiler, such as for inline string variables.
+
+Variables intended to store binary data are declared using the byte type:
+
+byte b
+
+This type is also equivalent to int1, but has no semantic meaning to the compiler and so will be untreated by string-handling expressions.
+
+Real number types are declared using the dec type, and can hold both positive and negative numbers:
+
+dec d = 0.5
+
+If the left hand side of an assignment is a decimal type and the right hand side is an integer, the integer is automatically converted up to its decimal equivalent. If the left hand side is an integer type and the right hand side is a decimal, the integer part of the decimal number is taken and assigned to the integer (i.e. discarding the fractional part).
+
+Variables of type dec are high-precision fixed-point real numbers encoded in base-10. As with integer types, various specific byte-widths are available, from dec1 up to dec512.
+Data types
+
+Data types are the typical way in which plain data is represented. They must be instantiated before use and are always accessed by reference.
+
+Data types are declared as follows:
+
+data Cat{
+	char name[]
+	int age
+	}
+
+A data type is initialised by using the new operator with the type name followed by the values for each field in the correct order:
+
+Cat c = new Cat("Johan", 3)
+
+You can also instantiate a data type by only setting specific fields by name, for example:
+
+Cat c = new Cat(age = 3)
+
+A data type can inherit from one other data type using the extends notation. A data type that inherits from nothing else automatically inherits from the base type Data.
+
+When a data instance is passed between two components, it becomes read-only at the component that did not instantiate it; this read-only copy can be made into a writeable copy by cloning it using the clone operator.
+
+Finally, data types can have constants associated within them in their type definition, for example:
+
+data Token{
+	const byte TTYPE_KEYWORD = 1
+	const byte TTYPE_OPERATOR = 2
+	byte tokenType
+	}
+
+The values of these type-associated constants are accessed using the notation TypeName.ConstantName, for example:
+
+if (b == Token.TTYPE_KEYWORD)
+   // ...
+
+Interface types
+
+Interface types represent functionality. They must also be instantiated before use and so instances are always accessed by reference. An interface may only contain function prototypes, event prototypes, and transfer fields (for adaptation); interfaces are not permitted to have any public data fields for direct variable access.
+
+Interface types are declared as follows:
+
+interface Hotel{
+  Hotel(char name[])
+  void addGuest(Guest g)
+  }
+
+In general the parameters declared on interface functions are assumed to be required to have a value passed in by the caller unless otherwise indicated. Interface functions (as well as local functions) can explicitly have optional parameters declared using the opt keyword:
+
+interface Hotel{
+   Hotel(char name[])
+   void addGuest(Guest g, opt char allergies[])
+   }
+
+When using the opt keyword, every parameter that follows the first use of opt is assumed to be optional (i.e., the opt keyword does not need to be used more than once for the same function declaration).
+
+An interface is implemented by a component which provides the logic of each function. An interface type can inherit from one other interface type using the extends notation. A interface type that inherits from nothing else automatically inherits from the base type Object.
+
+Like data types, interface types can also can type-associated constants, which are declared in the same way:
+
+interface File{
+   const byte READ = 1
+   File(char path[], byte mode)
+   }
+
+The value of a type-associated constant is accessed using the notation TypeName.ConstantName, for example:
+
+File fd = new File("my_file.txt", File.READ)
+
+Arrays
+
+Dana supports n-dimensional arrays which are allocated in contiguous memory. An array, such as char x[], needs to be initialised using a construction operation before it is used. This is done with the notation:
+
+x = new char[64]
+
+This creates a new array of the given size (which can also be input from a variable).
+
+Alternatively, you can also directly instantiate an array from other existing arrays and variables, with the array size determined dynamically:
+
+x = new char[](y, z)
+
+This creates a new array which has the combined size of all of the input parameters. One of the input parameters can be the array x itself, often used to expand an array with additional items.
+
+Note that an array of data or object type is an array of references and so two levels of initialisation are needed when creating an array by size - one to initialise the array itself and one to initialise each cell of the array:
+
+x = new Cat[64]
+
+for (int i = 0; i < 64; i++)
+    x[i] = new Cat()
+
+Any array can have its current length queried using the attribute arrayLength:
+
+int q = x.arrayLength
+
+As with data instances, array instances are read-only at any component that did not instantiate them.
+
+Multi-dimensional arrays behave in a similar way. They can be constucted by length:
+
+int ar[][] = new int[8][10]
+
+Or they can be constructed by value. When constructing a multi-dimensional array by value, the arrays passed in can either match the dimensionality of the target array, or can be one dimension less, for example:
+
+int ar[][] = new int[][](new int[](1, 2, 3), new int[](4, 5, 6))
+
+The above yields an array with two rows, each of which have three columns; the first row is (1, 2, 3) and the second row is (4, 5, 6).
+
+Multi-dimensional arrays in Dana must have the same number of cells in each row of each dimension; in the above example, each row must have 3 cells.
+
+Note that multi-dimensional arrays in Dana are allocated as a single contiguous memory block: you do not therefore need to separately instantiate each 'row' of a two-dimensional array, and you cannot assign-by-reference a one-dimensional array to be a row of a two-dimensional array (instead you must copy the values).
+Sub-arrays and array copy
+
+We can copy cells between arrays using the syntax:
+
+a =[] b
+
+This copies all array cells from b over the cells of a. The operation copies as many cells as the shortest of the two array lengths and then stops.
+
+We can also gain a reference to a sub-range of array cells from an existing array, using dana.sub(x, start, end). If we had an array:
+
+char a[] = "hello"
+
+We can then get a sub-range of this array as a direct memory reference:
+
+char b[] = dana.sub(a, 1, 3)
+
+The array b has a length of 3, and has the contents "ell". This new array directly refers to the memory of the original array a, so any changes that we make to the values of cells in b also affect the cells of a.
+Cloning data and arrays
+
+Because data types and arrays are passed by reference, and these references are read-only when they cross component boundaries, a special operator clone is available which copies a data type or array so that the copy is writable:
+
+Cat x = clone y
+
+The clone operation makes a deep copy of the first level of the given data type or array. This copy is not recursive, and so if you want to copy the fields of a data type, or copy the elements of an array, you must re-apply the clone operator to those additional elements.
+
+To perform a recursive clone automatically, we can use the rclone operator, which follows all references recursively to also clone any data or array instances found:
+
+Cat x = rclone y
+
+When a component performs a recursive clone operation, it is sometimes useful to be able to quickly and recursively set all references of that copy to null, particularly when assisting the garbage collector with circular references. This can be done with the delink operator:
+
+delink x
+
+Testing equality
+
+Equality can be checked by value and by reference. Value equality is tested using the operators == and !=, while reference equality is tested with the operators === and !==.
+Value equality
+
+To test value equality, the operators == and != are used. In the case of data types, the operation a == b will perform a test of field equivalence for every field of the data type. For arrays, the equivalence of each cell in the array is checked. Note that in both of these cases, the equality check does not follow any references; instead references are considered equal if they reference the exact same entity instance.
+
+To help see how this works, consider the following example type:
+
+data Example {
+   int a
+   int b
+   bool c
+}
+
+We can instantiate this data type multiple times like this:
+
+Example e1 = new Example(12, 44, true)
+Example e2 = new Example(12, 44, true)
+Example e3 = new Example(12, 43, true)
+
+Each of the above instances is in a distinct memory area, such that a reference equality check of e1 === e2 would return false. The value equality check:
+
+e1 == e2
+
+...will return true, since each field in the two data instances has the same value. The comparison:
+
+e2 == e3
+
+...will return false, since the second field of the instances has a different value.
+
+Now consider the following example, which has fields of reference type:
+
+data ExampleB {
+   int a
+   int b
+   char name[]
+}
+
+Again we instantiate the data type three times:
+
+ExampleB e1 = new ExampleB(12, 44, "Alex")
+ExampleB e2 = new ExampleB(12, 44, e1.name)
+ExampleB e3 = new ExampleB(12, 44, "Alex")
+
+When we perform this test:
+
+e1 == e2
+
+...the value of each field is compared, and the reference-type field name is checked using a reference equality check ===. This is because value-based equality checks on data instances do not recursively follow reference type fields of those instances, instead using a reference check on such fields. The equality check e1 == e2 returns true, because e2 references the same char[] instance as e1. By comparison, the test:
+
+e1 == e3
+
+...returns false, because the name field references a different char[] instance to that of e1. Note that, if you wished to write your own fully recursive value equality checker, you could do this using Dana's reflective operators.
+
+For objects, the value equality operation a == b uses the object's equality function and is the same as (a == null && b == null) || a.equals(b).
+Reference equality
+
+To test reference equality, the operators === and !== are used. These operations check if two variables refer to exactly the same instance of a data type, array, or object.

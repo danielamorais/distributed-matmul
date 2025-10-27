@@ -1,0 +1,23 @@
+---
+alwaysApply: true
+---
+Dana is designed primarily to support runtime adaptation by hot-swapping components. The rules of the language guide the programmer to write code which is inherently adaptable, as far as possible, and which results in a sound system post-adaptation. These rules include reference-passing constraints, read-only status of fields, and strict encapsulation.
+
+Dana also protects from subtle effects during adaptation caused by stateful side effect channels. To support this protection, objects are not allowed to store references to other objects under certain conditions.
+
+We can check side effect channels by requiring the programmer to tell us something very simple in an interface: whether or not a parameter is intended to be saved in the global state of the object instance implementing that interface.
+
+We allow the programmer to specify this using the qualifier store on function parameters. This is almost always very easy to decide in advance when designing an interface, and provides Dana with the level of reasoning about side effects that it needs to offer adaptation safety.
+
+The compiler and runtime will advise you on whether or not parameters need a store qualifier on them. The constraint store enforces is that global variables cannot have values assigned from any parameters, or any local variables, that are not declared with store.
+
+An example of this concept might be an interface supporting storage and retrieval of a list of data instances:
+
+interface List {
+    void add(store Data i)
+    void rem(Data i)
+    }
+
+Here we have declared the parameter of add with store, because the implementation of this interface will keep the data instance i in the global state of an object. Any parameters without the store qualifier can only be used within the function implementation, rather than being able to be assigned to any global state.
+
+This constraint also applies to the local variables of a function in general (in addition to its parameters); however, the Dana compiler automatically determines which local variables can have store status and upgrades those variables if possible. The compiler also allows all primitive types and arrays of primitive types to be assigned to global state, whether or not they are declared with store, as they do not present any potential for side-effect channels.

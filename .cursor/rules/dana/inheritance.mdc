@@ -1,0 +1,66 @@
+---
+alwaysApply: true
+---
+Interface Inheritance
+
+Dana supports a form of functionality inheritance through its interfaces, allowing objects to be subtypes of other objects. If a component provides an interface that is a subtype of another interface, that component must either implement all functions of both the subtype and supertype, or else must have a required interface of the supertype.
+
+All interfaces automatically inherit from the Object base type, which contains the functions equals(), toString(), clone() and getID(). These functions are therefore available on all objects, and the Object type can be used to reference any object instance.
+
+In detail, inheritance works as follows.
+
+Consider the two interface types:
+
+interface GraphicsObject {
+    void paint(Canvas c)
+    void setPosition(int x, int y)
+    Point getPosition()
+    }
+
+and
+
+interface Button extends GraphicsObject {
+    void setText(char text[])
+    char[] getText()
+    }
+
+We can then implement the Button interface type as follows:
+
+component provides Button requires GraphicsObject {
+    char myText[]
+    
+    void Button:setText(char text[])
+        {
+        myText = clone text
+        }
+    
+    char[] Button:getText()
+        {
+        return myText
+        }
+    }
+
+In this example we've chosen to only implement the functions declared in the Button interface type, providing no implementations of any functions from the GraphicsObject supertype. Because of this we must declare a required interface of type GraphicsObject, giving access to an implementation of these functions.
+
+We can also provide overriden implementations of some or all of the functions from the supertype. When we do this we still use the Button type as the function prefix, for example providing an overridden implementation of the paint() function from GraphicsObject:
+
+component provides Button requires GraphicsObject {
+    char myText[]
+    
+    void Button:setText(char text[])
+        {
+        myText = clone text
+        }
+        
+    char[] Button:getText()
+        {
+        return myText
+        }
+    
+    void Button:paint(Canvas c)
+        {
+        			
+        }
+    }
+
+If we choose to provide an overridden implementation of every function from a supertype it is then no longer necessary to declare the supertype as a required interface.

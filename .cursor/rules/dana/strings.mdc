@@ -1,0 +1,54 @@
+---
+alwaysApply: true
+---
+Strings
+
+A string in Dana is simply an array of characters:
+
+char str[] = "hello"
+
+Dana assumes that strings are encoded in UTF-8 by default.
+
+Strings can contain variables identified with a $ token:
+
+char name[] = "Amma"
+char str[] = "hello $name"
+
+In this case the two strings are automatically combined based on the value of the given variable at runtime. We can also include more complex expressions such as function calls in strings, but must wrap them in parentheses:
+
+char str[] = "hello $(ui.getName())"
+
+Dana does not have a separate 'character' literal form, for individual characters. A single character is assigned from a string literal:
+
+char c = "a"
+
+And individual characters from a string are similarly checked for equivalence using regular string literals:
+
+if (str[5] == ".")
+   //do something...
+
+String data instances
+
+In many cases it is useful to provide or return an array of strings, or pass a string to a function which expects a data instance. In these cases we wrap a string in the data.String type:
+
+data String {
+    char string[]
+    }
+
+We then instantiate this type as in any other data type:
+
+String s = new String("hello")
+
+Basic string manipulation
+
+The API data.StringUtil is used for the most common forms of string query and manipulation.
+
+To tokenise a string, we would use the StringUtil:explode() function:
+
+String[] explode(char str[], char tokens[])
+
+For example:
+
+String parts[] = stringUtil.explode(myString, ".:")
+
+This returns an array of String instances (as defined above) without the tokens that have been specified. A wide range of other string manipulation functions, including searching, subString, case changes, and so on, are available in the same API.
