@@ -19,8 +19,8 @@ mkdir -p wasm_output
 # echo "Generating proxy files..."
 # python3 proxy_generator
 
-echo "Compiling main application to WASM..."
-dnc app/mainWasm.dn -os ubc -chip 32 -o wasm_output/App.o
+#echo "Compiling main application to WASM..."
+# dnc app/mainWasm.dn -os ubc -chip 32 -o wasm_output/App.o
 
 # echo "Compiling additional components..."
 
@@ -37,8 +37,7 @@ find . -name "*.dn" -type f \
     ! -path "./.git/*" \
     ! -path "./results/*" \
     ! -path "./testing/*" \
-    ! -path "./proxy_generator/*" \
-    ! -name "mainWasm.dn" | while read file; do
+    ! -path "./proxy_generator/*" | while read file; do
     # Get the relative path without extension
     rel_path="${file%.dn}"
     rel_path="${rel_path#./}"
