@@ -3,7 +3,8 @@
 # Compile Dana application to WASM
 # Usage: ./compile-wasm.sh
 
-set -e  # Exit on any error
+# Don't exit on error - we want to collect all errors first
+# set -e is removed to allow continuing after errors
 
 echo "=== Compiling Dana application to WASM ==="
 
@@ -15,6 +16,10 @@ fi
 
 # Create output directory if it doesn't exist
 mkdir -p wasm_output
+
+# Temporary file to store errors
+ERROR_FILE=$(mktemp)
+trap "rm -f $ERROR_FILE" EXIT
 
 # echo "Generating proxy files..."
 # python3 proxy_generator
@@ -51,7 +56,10 @@ find . -name "*.dn" -type f \
     output_file="$output_dir/$base_name.o"
     
     echo "Compiling $file -> $output_file"
-    dnc "$file" -os ubc -chip 32 -o "$output_file"
+    
+    # Compile and capture errors directly to error file
+    # Redirect stderr to stdout, then filter for error lines and append to error file
+    dnc "$file" -os ubc -chip 32 -o "$output_file" 2>&1 | grep -i "error" >> "$ERROR_FILE" || true
 done
 
 # Compile other necessary components
@@ -76,16 +84,19 @@ done
 #     dnc network/rpc/RPCUtil.dn -os ubc -chip 32 -o wasm_output/RPCUtil.o
 # fi
 
-# if [ -f "network/tcp/TCPUtil.dn" ]; then
-#     echo "Compiling TCPUtil component..."
-#     dnc network/tcp/TCPUtil.dn -os ubc -chip 32 -o wasm_output/TCPUtil.o
-# fi
-
 # # Compile monitoring components
 # if [ -f "monitoring/ResponseTime.dn" ]; then
 #     echo "Compiling ResponseTime component..."
 #     dnc monitoring/ResponseTime.dn -os ubc -chip 32 -o wasm_output/ResponseTime.o
 # fi
+
+# Print all errors at the end
+if [ -s "$ERROR_FILE" ]; then
+    echo ""
+    echo "=== Compilation Errors ==="
+    cat "$ERROR_FILE"
+    echo ""
+fi
 
 echo "=== WASM compilation complete ==="
 echo "Output files are in the 'wasm_output' directory:"
