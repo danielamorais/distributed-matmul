@@ -1,0 +1,61 @@
+component provides RenderApp requires ui.FlowRender, ui.FlowCanvas, ui.FlowFont, time.Timer timer {
+	FlowRender window
+	FlowCanvas canvas
+	
+	RenderApp:RenderApp()
+		{
+		window = new FlowRender(60)
+		window.setSize(400, 200)
+		canvas = new FlowCanvas(window)
+
+		window.setTitle("Direct Render Loop")
+		window.setVisible(true)
+		}
+	
+	bool processEvents(FlowEvent events[])
+		{
+		bool quit = false
+		for (int i = 0; i < events.arrayLength; i++)
+			{
+			if (events[i].type == FlowEvent.T_QUIT)
+				{
+				quit = true
+				}
+			}
+		
+		return quit
+		}
+	
+	Ellipse2D ball = new Ellipse2D(10, 100, 80, 80, new Color(100, 100, 200, 255))
+	int x = 100
+	bool right = true
+	
+	bool RenderApp:loop()
+		{
+		bool quit = false
+
+		FlowEvent events[] = window.getEvents()
+
+		window.renderBegin()
+		ball.x = x
+		canvas.ellipse(ball)	
+		window.renderEnd()
+
+		quit = processEvents(events)
+
+		if (right)
+			{
+			x += 2
+			if (x > 300) right = false
+			}
+			else
+			{
+			x -= 2
+			if (x == 80) right = true
+			}
+		
+		timer.sleep(5)
+
+		return !quit
+		}
+}

@@ -1,0 +1,9 @@
+component provides App requires io.Output out, System system, RenderApp {
+	
+	int App:main(AppParam params[])
+		{
+		system.setProcessLoop(new RenderApp())
+		
+		return 0
+		}
+}
