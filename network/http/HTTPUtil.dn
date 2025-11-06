@@ -3,75 +3,57 @@ const char debugMSG[] = "[@HTTPUtil]"
 component provides network.http.HTTPUtil requires io.Output out, data.IntUtil iu, io.FileSystem fileSystem, 
 	data.StringUtil stringUtil {
     
-    HTTPMessage HTTPUtil:readHeader(store TCPSocket s) {
-        HTTPMessage httpHeader = null
-        char buff[]
-        int len = 0
-        char command[] = null
-        while ((buff = s.recv(1)).arrayLength > 0) {
-            command = new char[](command, buff)
-            len++
-            if(len >= 4 &&
-                (command[len-4] == "\r") && (command[len-3] == "\n") && 
-				(command[len-2] == "\r") && (command[len-1] == "\n")) {
-
-                // out.println("$debugMSG - header generated")
-
-                httpHeader = parseHTTPRequest(command)
-                if (httpHeader != null) { httpHeader.rawHeader = command }
+    HTTPMessage HTTPUtil:readHTTPRequest(char buf[]) {
+        // Find the end of headers (double CRLF)
+        int headerEnd = 0
+        for (int i = 0; i < buf.arrayLength - 3; i++) {
+            if (buf[i] == "\r" && buf[i+1] == "\n" && buf[i+2] == "\r" && buf[i+3] == "\n") {
+                headerEnd = i + 4
                 break
             }
         }
-        if (httpHeader == null) { s.disconnect() }
-        else { httpHeader.socket = s }
-
-		return httpHeader
+        
+        // Parse headers
+        char headerBuf[] = null
+        if (headerEnd > 0) {
+            headerBuf = new char[headerEnd]
+            for (int i = 0; i < headerEnd; i++) {
+                headerBuf[i] = buf[i]
+            }
+        } else {
+            headerBuf = buf
+        }
+        
+        HTTPMessage httpMessage = parseHTTPRequest(headerBuf)
+        httpMessage.rawHeader = headerBuf
+        
+        // Parse body if contentLength > 0
+        if (headerEnd > 0 && headerEnd < buf.arrayLength && httpMessage.contentLength > 0) {
+            int bodyStart = headerEnd
+            int bodyLength = httpMessage.contentLength
+            if (bodyStart + bodyLength <= buf.arrayLength) {
+                httpMessage.postData = new char[bodyLength]
+                for (int i = 0; i < bodyLength; i++) {
+                    httpMessage.postData[i] = buf[bodyStart + i]
+                }
+            }
+        }
+        
+        return httpMessage
     }
-
-    HTTPMessage HTTPUtil:getMessage(HTTPMessage header) {
-        HTTPMessage message = new HTTPMessage()
-		message.command = header.command
-		message.resource = header.resource
-		message.version = header.version
-		message.connection = header.connection
-		message.accept = header.accept
-		message.userAgent = header.userAgent
-		message.acceptEncoding = header.acceptEncoding
-		message.acceptLanguage = header.acceptLanguage
-		message.queryString = header.queryString
-		message.mimeType = header.mimeType
-		message.contentType = header.contentType
-		message.payload = header.payload
-		message.server = header.server
-		message.contentEnconding = header.contentEnconding
-		message.accessControlAllowOrigin = header.accessControlAllowOrigin
-		message.reasonPhrase = header.reasonPhrase
-		message.rawHeader = header.rawHeader
-		message.status = header.status
-		message.contentLength = header.contentLength
-		message.numRequest = header.numRequest
-		message.sleepTime = header.sleepTime
-		message.resourceExists = header.resourceExists
-		message.cacheMessage = null
-		if (header.cacheMessage != null) {
-			message.cacheMessage = new CacheMessage(
-                maxAge = header.cacheMessage.maxAge,
-                ifNoneMatch = header.cacheMessage.ifNoneMatch,
-                ifModifiedSince = header.cacheMessage.ifModifiedSince
-            )
-		}
-		message.socket = header.socket
-		// out.println("$debugMSG - request content length - $(header.contentLength)")
-		if (header.contentLength > 0) {
-			message.postData = new char[](header.socket.recv(header.contentLength))
-		}
-		return message
+    
+    char[] HTTPUtil:buildHTTPResponse(int code, char status[], char serverName[], int contentLength, char contentType[], char body[]) {
+        char response[] = "HTTP/1.1 $(iu.makeString(code)) $status\r\n"
+        response = new char[](response, "Server: $serverName\r\n")
+        response = new char[](response, "Content-Length: $(iu.makeString(contentLength))\r\n")
+        response = new char[](response, "Connection: close\r\n")
+        response = new char[](response, "Content-Type: $contentType\r\n")
+        response = new char[](response, "\r\n")
+        if (body != null && body.arrayLength > 0) {
+            response = new char[](response, body)
+        }
+        return response
     }
-
-    HTTPMessage HTTPUtil:readHTTPRequest(store TCPSocket s) {
-		HTTPMessage httpHeader = readHeader(s)
-		return getMessage(httpHeader)
-	}
 
     // examples of request first line:
 	// request: GET /path/to/file/index.html HTTP/1.0

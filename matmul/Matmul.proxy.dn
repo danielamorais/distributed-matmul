@@ -1,6 +1,7 @@
 
-component provides matmul.Matmul(AdaptEvents) requires network.rpc.RPCUtil connection, data.IntUtil iu, data.json.JSONEncoder je, data.StringUtil su {
-	Address remotes[] = new Address[](new Address("dana-remote-1", 8081),new Address("dana-remote-2", 8082))
+component provides matmul.Matmul(AdaptEvents) requires network.http.HTTPRPCUtil connection, data.IntUtil iu, data.json.JSONEncoder je, data.StringUtil su {
+	// Changed Address.name to contain full URL instead of hostname
+	char remotes[] = new char[]("http://dana-remote-1:8081/rpc", "http://dana-remote-2:8082/rpc")
 	int addressPointer = 0
 	Mutex pointerLock = new Mutex()
 
@@ -96,12 +97,12 @@ component provides matmul.Matmul(AdaptEvents) requires network.rpc.RPCUtil conne
 	}
 
 	Response distribute(Request r) {
-		connection.connect(remotes[addressPointer])
+		char url[] = remotes[addressPointer]
 		mutex(pointerLock) {
 			addressPointer++
 			if(addressPointer >= remotes.arrayLength) addressPointer = 0
 		}
-		return connection.make(r)
+		return connection.makeHTTPRPC(url, r)
 	}
 
 	void AdaptEvents:active() {

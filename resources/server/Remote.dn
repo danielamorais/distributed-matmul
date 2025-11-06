@@ -1,11 +1,5 @@
-uses net.TCPSocket
-
-data Param {
-    char value[]
-    char key[]
-}
+uses network.http.HTTPUtil
 
 interface Remote {
-    void start(int port)
-    void handleRequest(TCPSocket s)
+    char[] processHTTPRequest(HTTPMessage request)
 }

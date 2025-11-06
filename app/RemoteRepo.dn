@@ -1,17 +1,14 @@
-const int DEFAULT_DIST_PORT = 8081
-
 component provides App requires data.IntUtil iu, server.Remote:matmul service {
-    int portDist = 0
-
+    
     int App:main(AppParam params[]) {
-        if (params.arrayLength == 2) {
-			portDist = iu.intFromString(params[0].string)
-		} else {
-			portDist = DEFAULT_DIST_PORT
-		} 
-		
-		service.start(portDist)
-
+        // Remote worker is now invoked via HTTP gateway
+        // This component is ready to process HTTP requests through the service interface
+        // The actual HTTP request handling is done by the HTTP gateway which calls
+        // service.processHTTPRequest() with HTTPMessage objects
+        
+        // Keep the process alive - actual HTTP handling happens externally
+        // In a real setup, this would be handled by an HTTP gateway/server
+        
         return 0
     }
 }

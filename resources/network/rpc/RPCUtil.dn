@@ -1,5 +1,3 @@
-uses net.TCPSocket
-
 data Address {
     char name[]
     int port
@@ -26,10 +24,7 @@ data Response {
 }
 
 interface RPCUtil {
-    bool connect(Address a)
-    Response make(Request r)
     Request parseRequestFromString(char requestString[])
-    char[] receiveData(TCPSocket s)
     char[] buildRawResponse(Response r)
     char[] getMethodFromMetadata(Metadata meta[])
     Response buildResponse(char method[], char status[])

@@ -1,37 +1,34 @@
 uses Constants
+uses network.rpc.RPCUtil
 const char debugMSG[] = "[@Remote]"
 
-component provides server.Remote:matmul requires net.TCPSocket, net.TCPServerSocket, io.Output out, data.IntUtil iu, data.json.JSONEncoder je, data.StringUtil su, network.rpc.RPCUtil rpc, matmul.Matmul remoteComponent {
-	bool serviceStatus = false
-
-	void Remote:start(int PORT) {
-		TCPServerSocket host = new TCPServerSocket()
-		serviceStatus = true
-
-		if (!host.bind(TCPServerSocket.ANY_ADDRESS, PORT)) {
-			out.println("Error: failed to bind master socket")
-			return
-		}
-
-		out.println("$debugMSG - Server started on port $(iu.makeString(PORT))")
-
-		while (serviceStatus) {
-			TCPSocket client = new TCPSocket()
-			if (client.accept(host)) asynch::handleRequest(client)
-		}
-
-	}
-
-	void Remote:handleRequest(TCPSocket s) {
-		char requestContent[] = rpc.receiveData(s)
-		if(requestContent == null) s.disconnect()
-		Request req = rpc.parseRequestFromString(requestContent)
+component provides server.Remote:matmul requires io.Output out, data.IntUtil iu, data.json.JSONEncoder je, 
+    data.StringUtil su, network.http.HTTPUtil httpUtil, network.rpc.RPCUtil rpc, matmul.Matmul remoteComponent {
+	
+	char[] Remote:processHTTPRequest(HTTPMessage request) {
+		Request req = parseHTTPRequest(request)
 		Response res = process(req)
-		char rawResponse[] = rpc.buildRawResponse(res)
-		s.send(rawResponse)
-		s.disconnect()
+		return buildHTTPResponse(res)
 	}
 
+	Request parseHTTPRequest(HTTPMessage request) {
+		// Parse the JSON body which contains the RPC Request
+		Request req = je.jsonToData(request.postData, typeof(Request))
+		return req
+	}
+
+	char[] buildHTTPResponse(Response res) {
+		char responseBody[] = je.jsonFromData(res)
+		char httpResponse[] = httpUtil.buildHTTPResponse(
+			200,
+			"OK",
+			HTTPUtil.SERVER_NAME,
+			responseBody.arrayLength,
+			"application/json",
+			responseBody
+		)
+		return httpResponse
+	}
 
 	Response process(Request req) {
 		char method[] = rpc.getMethodFromMetadata(req.meta)
@@ -50,7 +47,6 @@ component provides server.Remote:matmul requires net.TCPSocket, net.TCPServerSoc
 
 		return rpc.buildResponse(method, "404")
 	}
-
 
 }
 

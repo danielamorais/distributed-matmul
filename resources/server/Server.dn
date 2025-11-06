@@ -14,7 +14,7 @@ interface Server extends Adapter {
     void init()
     void initWithProxy()
     void scaleToProxy()
-    void process(HTTPMessage request)
-    void sendResponse(HTTPMessage request, Response response)
-    void handleRequest(store TCPSocket client)
+    char[] process(HTTPMessage request)
+    char[] sendResponse(HTTPMessage request, Response response)
+    char[] handleRequest(char httpRequestBuf[])
 }
