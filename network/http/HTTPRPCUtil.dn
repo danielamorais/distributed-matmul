@@ -36,5 +36,11 @@ component provides network.http.HTTPRPCUtil requires io.Output out, net.http.HTT
             return new Response(errorMeta, "")
         }
     }
+
+    bool HTTPRPCUtil:isValidResponse(Response res) {
+        if(res == null) return false
+        if(res.meta == null || res.meta.arrayLength == 0) return false
+        return true
+    }
 }
 

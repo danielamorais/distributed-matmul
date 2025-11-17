@@ -1,40 +1,18 @@
-component provides App requires server.Server server, io.Input in, io.Output out, data.IntUtil iu {
-    void printOptions() {
-        out.println("Options:")
-        out.println("1 - use list")
-        out.println("2 - use proxy list")
-        out.println("3 - exit")
-        out.print("option> ")
-    }
+uses server.Server
 
-    void processOption(int option) {
-        if (option == 0) {
-            server.init()
-        } else if (option == 1) {
-            server.adaptRepository()
-        } else if (option == 2) {
-            server.adaptRepository(true)
-        } else {
-            out.println("Nao deu bom $option")
-        }
-    }
-    
+component provides App requires io.Output out, data.IntUtil iu, System system, server.ServerProcessLoop loop {
     int App:main(AppParam params[]) {
-        if(params.arrayLength > 0 && iu.intFromString(params[0].string) == 3) {
-            server.init()
-        } else if(params.arrayLength > 0 && iu.intFromString(params[0].string) == 2) {
-            server.scaleToProxy()
-        } else if(params.arrayLength > 0 && iu.intFromString(params[0].string) == 1) {
-            server.initWithProxy()
-        } else {
-            int instruction = 0
-            while(instruction != 3) {
-                asynch::processOption(instruction)
-                printOptions()
-                char userInput[] = in.readln()
-                instruction = iu.intFromString(userInput)
+        int mode = Server.MODE_LOCAL
+        if(params.arrayLength > 0) {
+            int provided = iu.intFromString(params[0].string)
+            if(provided == Server.MODE_PROXY || provided == Server.MODE_ADAPTIVE || provided == Server.MODE_LOCAL) {
+                mode = provided
             }
         }
+
+        loop.configure(mode)
+        system.setProcessLoop(loop)
+        out.println("App running in mode $(iu.makeString(mode)) with ProcessLoop.")
         
         return 0
     }

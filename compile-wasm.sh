@@ -66,8 +66,12 @@ done
 # Print all errors at the end
 if [ -s "$ERROR_FILE" ]; then
     echo ""
-    echo "=== Compilation Errors ==="
-    cat "$ERROR_FILE"
+    # Print the error message in red
+    echo -e "\033[0;31m=== Compilation Errors ===\033[0m"
+    # Print the actual error contents in red as well
+    while IFS= read -r line; do
+        echo -e "\033[0;31m$line\033[0m"
+    done < "$ERROR_FILE"
     echo ""
 fi
 

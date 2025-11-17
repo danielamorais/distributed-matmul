@@ -36,10 +36,19 @@ class HeaderGenerator:
         return resources
     
     def provide_addressess(self) -> str:
-        var_assign = "\tAddress remotes[] = new Address[]("
+        var_assign = "\tHTTPAddress remotes[] = new HTTPAddress[]("
+        address_literals = []
         for remote in self.remotes:
-            var_assign += f"new Address(\"{remote['address']}\", {remote['port']}),"
-        var_assign = var_assign[:-1]
+            url = remote.get("url")
+            if url is None:
+                host = remote.get("address", "localhost")
+                port = remote.get("port", 80)
+                path = remote.get("path", "/rpc")
+                url = f"http://{host}:{port}{path}"
+            alias = remote.get("alias") or remote.get("name") or ""
+            address_literals.append(f"new HTTPAddress(\"{url}\", \"{alias}\")")
+        if len(address_literals) > 0:
+            var_assign += ",".join(address_literals)
         var_assign += ")\n"
         return var_assign
     

@@ -1,8 +1,11 @@
 uses network.rpc.RPCUtil
+uses network.http.HTTPAddress
 
 component provides matmul.Matmul(AdaptEvents) requires data.IntUtil iu, data.StringUtil su, io.Output out,
     network.http.HTTPRPCUtil connection, data.json.JSONEncoder je {
-    char remotes[] = new char[]("http://localhost:8081/rpc")
+    HTTPAddress remotes[] = new HTTPAddress[](
+        new HTTPAddress("http://localhost:8081/rpc", "default-remote")
+    )
     int addressPointer = 0
     Mutex pointerLock = new Mutex()
     
@@ -92,12 +95,12 @@ component provides matmul.Matmul(AdaptEvents) requires data.IntUtil iu, data.Str
     }
 
     Response distribute(Request req) {
-        char url[] = remotes[addressPointer]
+        HTTPAddress destination = remotes[addressPointer]
         mutex(pointerLock) {
             addressPointer++
             if(addressPointer >= remotes.arrayLength) addressPointer = 0
         }
-        return connection.makeHTTPRPC(url, req)
+        return connection.makeHTTPRPC(destination.url, req)
     }
 
     Metadata[] buildMetaForMethod(char method[]) {

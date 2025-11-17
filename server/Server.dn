@@ -1,39 +1,30 @@
 uses server.MatmulController
+uses server.Server
 
 const char debugMSG[] = "[@Server]"
-const int SERVER_PORT = 8080
 
 component provides server.Server requires io.Output out, network.http.HTTPUtil httpUtil, data.IntUtil iu,
     composition.Adapt adapter, composition.RecursiveLoader loader,
     monitoring.ResponseTime rt, time.Timer timer {
-    bool adaptation = false
     MatmulController mc
     LoadedComponents matmul = loader.load("matmul/Matmul.o")
     LoadedComponents matmulProxy = loader.load("matmul/Matmul.proxy.o")
     LoadedComponents matmulController = loader.load("server/MatmulController.o")
     int lastResponseTime = 0
     Mutex lock = new Mutex()
+    bool adaptiveMode = false
 
-    void Server:scaleToProxy() {
-        matmulController.mainComponent.wire("matmul.Matmul", matmul.mainComponent, "matmul.Matmul")
-        mc = new MatmulController() from matmulController.mainComponent
-        
-        out.println("\n$debugMSG - Server is up and running...")
-    }
+    void Server:initialize(opt int requestedMode) {
+        int mode = Server.MODE_LOCAL
+        if(isset requestedMode) mode = requestedMode
 
-    void Server:initWithProxy() {
-        matmulController.mainComponent.wire("matmul.Matmul", matmulProxy.mainComponent, "matmul.Matmul")
-        mc = new MatmulController() from matmulController.mainComponent
-        adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmulProxy.mainComponent)
-        
-        out.println("\n$debugMSG - Server is up and running...")
-    }
-
-    void Server:init() {
-        out.println("\n$debugMSG - Server is up and running...")
-
-        matmulController.mainComponent.wire("matmul.Matmul", matmul.mainComponent, "matmul.Matmul")
-        mc = new MatmulController() from matmulController.mainComponent
+        if(mode == Server.MODE_PROXY) {
+            configureProxyMode()
+            adaptiveMode = false
+        } else {
+            configureLocalMode()
+            adaptiveMode = (mode == Server.MODE_ADAPTIVE)
+        }
     }
 
     void Server:adaptRepository(opt bool useProxy) {
@@ -41,16 +32,16 @@ component provides server.Server requires io.Output out, network.http.HTTPUtil h
         if(isset useProxy && useProxy) adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmulProxy.mainComponent)
         else adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmul.mainComponent)
         rt.markFinishTime()
-        // out.println("[SERVER] - adaptation time: $(iu.makeString(rt.getResult()))")
         rt.clearTime()
     }
 
     char[] Server:handleRequest(char httpRequestBuf[]) {
+        if(adaptiveMode) return handleAdaptiveRequest(httpRequestBuf)
         HTTPMessage msg = httpUtil.readHTTPRequest(httpRequestBuf)
         return process(msg)
     }
 
-    char[] handleScaleRequest(char httpRequestBuf[]) {
+    char[] handleAdaptiveRequest(char httpRequestBuf[]) {
         HTTPMessage msg = httpUtil.readHTTPRequest(httpRequestBuf)
         rt.markStartTime()
         char response[] = process(msg)
@@ -64,8 +55,7 @@ component provides server.Server requires io.Output out, network.http.HTTPUtil h
     }
     
     char[] Server:process(HTTPMessage request) {
-        Response res = null
-        res = mc.handle(request)
+        Response res = mc.handle(request)
         if (res != null) return sendResponse(request, res)
         else return sendResponse(request, build404(request))
     }
@@ -92,4 +82,16 @@ component provides server.Server requires io.Output out, network.http.HTTPUtil h
         )
     }
 
+    void configureLocalMode() {
+        out.println("\n$debugMSG - Server is up and running (local)...")
+        matmulController.mainComponent.wire("matmul.Matmul", matmul.mainComponent, "matmul.Matmul")
+        mc = new MatmulController() from matmulController.mainComponent
+    }
+
+    void configureProxyMode() {
+        matmulController.mainComponent.wire("matmul.Matmul", matmulProxy.mainComponent, "matmul.Matmul")
+        mc = new MatmulController() from matmulController.mainComponent
+        adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmulProxy.mainComponent)
+        out.println("\n$debugMSG - Server is up and running (proxy)...")
+    }
 }

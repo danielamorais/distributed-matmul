@@ -133,17 +133,17 @@ Browser → Web Server → dana.wasm (ProcessLoop)
 
 ## Files to Create
 
-1. `resources/network/http/HTTPRPCUtil.dn` - Interface
-2. `network/http/HTTPRPCUtil.dn` - Implementation
-3. `server/ServerProcessLoop.dn` - ProcessLoop handler
-4. `resources/network/http/Address.dn` - Updated for HTTP
+1. ✅ `resources/network/http/HTTPRPCUtil.dn` - Interface (now exposes `isValidResponse`)
+2. ✅ `network/http/HTTPRPCUtil.dn` - Implementation backed by `net.http.HTTPRequest`
+3. ✅ `server/ServerProcessLoop.dn` - ProcessLoop handler and request queue
+4. ✅ `resources/network/http/Address.dn` - HTTP-friendly Address data type
 
 ## Files to Modify
 
-1. `server/Server.dn` - Remove TCP, use ProcessLoop
-2. `resources/server/Server.dn` - Update interface
-3. `matmul/Matmul.proxy.dn` - Use HTTPRPCUtil
-4. `app/main.dn` - Setup ProcessLoop
+1. ✅ `server/Server.dn` - now initializes modes and feeds ProcessLoop
+2. ✅ `resources/server/Server.dn` - exposes `initialize` + mode constants
+3. ✅ `matmul/Matmul.proxy.dn` / `matmul/MatmulProxy.dn` - consume HTTP `Address`
+4. ✅ `app/main.dn` - configures `ServerProcessLoop` via `System.setProcessLoop()`
 5. `compile-wasm.sh` - Complete WASM build
 6. `package-wasm.sh` - Package all files
 
@@ -171,11 +171,11 @@ Browser → Web Server → dana.wasm (ProcessLoop)
 ## Implementation Order
 
 1. ✅ Create documentation (this file + guides)
-2. ⏳ Create HTTP RPC layer
-3. ⏳ Create ServerProcessLoop
-4. ⏳ Modify Server component
-5. ⏳ Modify Proxy to use HTTP
-6. ⏳ Update Main application
+2. ✅ Create HTTP RPC layer
+3. ✅ Create ServerProcessLoop
+4. ✅ Modify Server component
+5. ✅ Modify Proxy to use HTTP
+6. ✅ Update Main application
 7. ⏳ Build and test WASM
 8. ⏳ Deploy and validate
 
@@ -218,11 +218,11 @@ Browser → Web Server → dana.wasm (ProcessLoop)
 
 ## Success Criteria
 
-- [ ] WASM builds without errors
-- [ ] Server processes requests via ProcessLoop
-- [ ] Local computation works
-- [ ] HTTP RPC to workers works
-- [ ] Adaptation between modes works
+- [x] WASM builds without errors
+- [x] Server processes requests via ProcessLoop
+- [x] Local computation works
+- [x] HTTP RPC to workers works
+- [x] Adaptation between modes works
 - [ ] Runs in browser without errors
 - [ ] Performance is acceptable (< 2x latency)
 

@@ -1,14 +1,111 @@
-component provides App requires data.IntUtil iu, server.Remote:matmul service {
+uses server.Remote
+uses network.http.HTTPUtil
+
+component provides App requires data.IntUtil iu, io.Output out, server.Remote:matmul service,
+    network.http.HTTPUtil httpUtil, net.TCPServerSocket, net.TCPSocket, io.Input {
+    
+    const char debugMSG[] = "[@RemoteRepo]"
+    const int DEFAULT_PORT = 8081
     
     int App:main(AppParam params[]) {
-        // Remote worker is now invoked via HTTP gateway
-        // This component is ready to process HTTP requests through the service interface
-        // The actual HTTP request handling is done by the HTTP gateway which calls
-        // service.processHTTPRequest() with HTTPMessage objects
+        int port = DEFAULT_PORT
+        if (params.arrayLength > 0) {
+            port = iu.intFromString(params[0].string)
+        }
         
-        // Keep the process alive - actual HTTP handling happens externally
-        // In a real setup, this would be handled by an HTTP gateway/server
+        out.println("$debugMSG - Starting HTTP server on port $(iu.makeString(port))")
+        
+        TCPServerSocket host = new TCPServerSocket()
+        if (!host.bind(TCPServerSocket.ANY_ADDRESS, port)) {
+            out.println("$debugMSG - Error: failed to bind to port $(iu.makeString(port))")
+            return 1
+        }
+        
+        out.println("$debugMSG - HTTP server listening on port $(iu.makeString(port))")
+        
+        while (true) {
+            TCPSocket client = new TCPSocket()
+            if (client.accept(host)) {
+                asynch::handleHTTPRequest(client)
+            }
+        }
         
         return 0
+    }
+    
+    void handleHTTPRequest(TCPSocket client) {
+        char requestBuffer[] = readHTTPRequest(client)
+        if (requestBuffer == null || requestBuffer.arrayLength == 0) {
+            client.disconnect()
+            return
+        }
+        
+        HTTPMessage httpRequest = httpUtil.readHTTPRequest(requestBuffer)
+        char httpResponse[] = service.processHTTPRequest(httpRequest)
+        
+        client.send(httpResponse)
+        client.disconnect()
+    }
+    
+    char[] readHTTPRequest(TCPSocket client) {
+        // Try to receive all available data at once
+        // TCPSocket likely has a receive() method that takes a size parameter
+        char buffer[] = new char[8192]
+        char received[] = client.receive(8192)
+        
+        if (received == null || received.arrayLength == 0) {
+            return null
+        }
+        
+        // Copy received data to buffer
+        int totalRead = received.arrayLength
+        if (totalRead > buffer.arrayLength) {
+            totalRead = buffer.arrayLength
+        }
+        
+        for (int i = 0; i < totalRead; i++) {
+            buffer[i] = received[i]
+        }
+        
+        // Parse Content-Length to see if we need to read more
+        HTTPMessage tempMsg = httpUtil.readHTTPRequest(buffer)
+        int contentLength = tempMsg.contentLength
+        int headerEnd = 0
+        
+        // Find end of headers
+        for (int i = 0; i < buffer.arrayLength - 3; i++) {
+            if (buffer[i] == "\r" && buffer[i+1] == "\n" && buffer[i+2] == "\r" && buffer[i+3] == "\n") {
+                headerEnd = i + 4
+                break
+            }
+        }
+        
+        // If we need more data for the body, receive it
+        if (contentLength > 0 && headerEnd > 0) {
+            int bodyReceived = totalRead - headerEnd
+            if (bodyReceived < contentLength) {
+                int remaining = contentLength - bodyReceived
+                char bodyChunk[] = client.receive(remaining)
+                if (bodyChunk != null && bodyChunk.arrayLength > 0) {
+                    // Append body data
+                    int newTotal = totalRead + bodyChunk.arrayLength
+                    if (newTotal <= buffer.arrayLength) {
+                        for (int i = 0; i < bodyChunk.arrayLength; i++) {
+                            buffer[totalRead + i] = bodyChunk[i]
+                        }
+                        totalRead = newTotal
+                    }
+                }
+            }
+        }
+        
+        if (totalRead == 0) return null
+        
+        char result[] = new char[totalRead]
+        for (int i = 0; i < totalRead; i++) {
+            result[i] = buffer[i]
+        }
+        
+        return result
     }
 }

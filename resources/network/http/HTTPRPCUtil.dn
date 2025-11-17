@@ -2,5 +2,6 @@ uses network.rpc.RPCUtil
 
 interface HTTPRPCUtil {
     Response makeHTTPRPC(char url[], Request req)
+    bool isValidResponse(Response res)
 }
 
