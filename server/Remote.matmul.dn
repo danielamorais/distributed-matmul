@@ -1,34 +1,65 @@
 uses Constants
+uses network.http.HTTPUtil
 uses network.rpc.RPCUtil
+
 const char debugMSG[] = "[@Remote]"
 
-component provides server.Remote:matmul requires io.Output out, data.IntUtil iu, data.json.JSONEncoder je, 
-    data.StringUtil su, network.http.HTTPUtil httpUtil, network.rpc.RPCUtil rpc, matmul.Matmul remoteComponent {
-	
+component provides server.Remote:matmul requires io.Output out, data.IntUtil iu, data.json.JSONEncoder je, data.StringUtil su, network.rpc.RPCUtil rpc, network.http.HTTPUtil httpUtil, matmul.Matmul remoteComponent {
+
 	char[] Remote:processHTTPRequest(HTTPMessage request) {
-		Request req = parseHTTPRequest(request)
+		// Extract request body (JSON-serialized Request)
+		char requestBody[] = request.postData
+		if (requestBody == null || requestBody.arrayLength == 0) {
+			return buildErrorResponse(400, "Bad Request", "Request body is empty")
+		}
+
+		// Parse JSON body to Request object
+		Request req = je.jsonToData(requestBody, typeof(Request))
+		if (req == null) {
+			return buildErrorResponse(400, "Bad Request", "Invalid request format")
+		}
+
+		// Process the RPC request
 		Response res = process(req)
-		return buildHTTPResponse(res)
-	}
+		if (res == null) {
+			return buildErrorResponse(500, "Internal Server Error", "Failed to process request")
+		}
 
-	Request parseHTTPRequest(HTTPMessage request) {
-		// Parse the JSON body which contains the RPC Request
-		Request req = je.jsonToData(request.postData, typeof(Request))
-		return req
-	}
+		// Extract status code from Response metadata
+		char statusCode[] = getStatusFromMetadata(res.meta)
+		int httpCode = 200
+		char httpStatus[] = "OK"
+		
+		if (statusCode != null && statusCode.arrayLength > 0) {
+			httpCode = iu.intFromString(statusCode)
+			if (httpCode == 404) {
+				httpStatus = "Not Found"
+			} else if (httpCode == 500) {
+				httpStatus = "Internal Server Error"
+			}
+		}
 
-	char[] buildHTTPResponse(Response res) {
+		// Serialize Response to JSON
 		char responseBody[] = je.jsonFromData(res)
-		char httpResponse[] = httpUtil.buildHTTPResponse(
-			200,
-			"OK",
-			HTTPUtil.SERVER_NAME,
-			responseBody.arrayLength,
-			"application/json",
-			responseBody
-		)
-		return httpResponse
+
+		// Build HTTP response
+		return httpUtil.buildHTTPResponse(httpCode, httpStatus, HTTPUtil.SERVER_NAME, responseBody.arrayLength, "application/json", responseBody)
 	}
+
+	char[] getStatusFromMetadata(Metadata meta[]) {
+		if (meta == null) return null
+		for (int i = 0; i < meta.arrayLength; i++) {
+			if (meta[i].name == "status") {
+				return meta[i].value
+			}
+		}
+		return null
+	}
+
+	char[] buildErrorResponse(int code, char status[], char message[]) {
+		return httpUtil.buildHTTPResponse(code, status, HTTPUtil.SERVER_NAME, message.arrayLength, "text/plain", message)
+	}
+
 
 	Response process(Request req) {
 		char method[] = rpc.getMethodFromMetadata(req.meta)
@@ -47,6 +78,7 @@ component provides server.Remote:matmul requires io.Output out, data.IntUtil iu,
 
 		return rpc.buildResponse(method, "404")
 	}
+
 
 }
 
