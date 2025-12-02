@@ -1,84 +1,202 @@
 uses Constants
 uses network.http.HTTPUtil
-uses network.rpc.RPCUtil
 
 const char debugMSG[] = "[@Remote]"
 
 component provides server.Remote:matmul requires io.Output out, data.IntUtil iu, data.json.JSONEncoder je, data.StringUtil su, network.rpc.RPCUtil rpc, network.http.HTTPUtil httpUtil, matmul.Matmul remoteComponent {
 
-	char[] Remote:processHTTPRequest(HTTPMessage request) {
-		// Extract request body (JSON-serialized Request)
-		char requestBody[] = request.postData
-		if (requestBody == null || requestBody.arrayLength == 0) {
-			return buildErrorResponse(400, "Bad Request", "Request body is empty")
-		}
-
-		// Parse JSON body to Request object
-		Request req = je.jsonToData(requestBody, typeof(Request))
-		if (req == null) {
-			return buildErrorResponse(400, "Bad Request", "Invalid request format")
-		}
-
-		// Process the RPC request
-		Response res = process(req)
-		if (res == null) {
-			return buildErrorResponse(500, "Internal Server Error", "Failed to process request")
-		}
-
-		// Extract status code from Response metadata
-		char statusCode[] = getStatusFromMetadata(res.meta)
-		int httpCode = 200
-		char httpStatus[] = "OK"
+	// Helper function to unescape JSON string
+	// Dana JSON parser bug: doesn't unescape nested JSON strings properly
+	// This function manually unescapes common JSON escape sequences
+	char[] unescapeJSONString(char escaped[]) {
+		if (escaped == null || escaped.arrayLength == 0) return escaped
 		
-		if (statusCode != null && statusCode.arrayLength > 0) {
-			httpCode = iu.intFromString(statusCode)
-			if (httpCode == 404) {
-				httpStatus = "Not Found"
-			} else if (httpCode == 500) {
-				httpStatus = "Internal Server Error"
+		char result[] = new char[]()
+		int i = 0
+		
+		while (i < escaped.arrayLength) {
+			// Check for backslash (ASCII 92)
+			if (escaped[i] == 92 && i + 1 < escaped.arrayLength) {
+				// Found backslash, check next character
+				int next = escaped[i + 1]
+				if (next == 34) {
+					// backslash-quote (34) -> quote
+					result = new char[](result, 34)
+					i = i + 2
+				} else if (next == 92) {
+					// backslash-backslash (92) -> backslash
+					result = new char[](result, 92)
+					i = i + 2
+				} else if (next == 110) {
+					// backslash-n (110) -> newline (10)
+					result = new char[](result, 10)
+					i = i + 2
+				} else if (next == 116) {
+					// backslash-t (116) -> tab (9)
+					result = new char[](result, 9)
+					i = i + 2
+				} else if (next == 114) {
+					// backslash-r (114) -> carriage return (13)
+					result = new char[](result, 13)
+					i = i + 2
+				} else {
+					// Unknown escape, keep the backslash
+					result = new char[](result, escaped[i])
+					i = i + 1
+				}
+			} else {
+				// Regular character
+				result = new char[](result, escaped[i])
+				i = i + 1
 			}
 		}
-
-		// Serialize Response to JSON
-		char responseBody[] = je.jsonFromData(res)
-
-		// Build HTTP response
-		return httpUtil.buildHTTPResponse(httpCode, httpStatus, HTTPUtil.SERVER_NAME, responseBody.arrayLength, "application/json", responseBody)
+		
+		return result
 	}
-
-	char[] getStatusFromMetadata(Metadata meta[]) {
-		if (meta == null) return null
-		for (int i = 0; i < meta.arrayLength; i++) {
-			if (meta[i].name == "status") {
-				return meta[i].value
-			}
-		}
-		return null
-	}
-
-	char[] buildErrorResponse(int code, char status[], char message[]) {
-		return httpUtil.buildHTTPResponse(code, status, HTTPUtil.SERVER_NAME, message.arrayLength, "text/plain", message)
-	}
-
 
 	Response process(Request req) {
 		char method[] = rpc.getMethodFromMetadata(req.meta)
+		out.println("$debugMSG - Method: $(method)")
 
 		if(method == "calcLine") {
+			// req.content is a JSON string, parse it first
+			out.println("$debugMSG - calcLine content: $(req.content)")
 			CalcLineParamsFormat paramsData = je.jsonToData(req.content, typeof(CalcLineParamsFormat))
+			if (paramsData == null) {
+				out.println("$debugMSG - ERROR: Failed to parse calcLine parameters")
+				return rpc.buildResponse(method, "400")
+			}
+			out.println("$debugMSG - Parsed calcLine params successfully")
 			Line result = remoteComponent.calcLine(remoteComponent.charToLine(paramsData.line),remoteComponent.charToMatrix(paramsData.B))
 			return rpc.buildResponseWithData("calcLine", "200", remoteComponent.lineToChar(result))
 		}
 
 		if(method == "multiply") {
+			// req.content is a JSON string like: {"A":"[[1,2],[3,4]]","B":"[[5,6],[7,8]]"}
+			// Parse it to get the parameters
+			out.println("$debugMSG - multiply content: $(req.content)")
 			MultiplyParamsFormat paramsData = je.jsonToData(req.content, typeof(MultiplyParamsFormat))
-			Matrix result = remoteComponent.multiply(remoteComponent.charToMatrix(paramsData.A),remoteComponent.charToMatrix(paramsData.B))
-			return rpc.buildResponseWithData("multiply", "200", remoteComponent.matrixToChar(result))
+			if (paramsData == null) {
+				out.println("$debugMSG - ERROR: Failed to parse multiply parameters from content")
+				return rpc.buildResponse(method, "400")
+			}
+			out.println("$debugMSG - Parsed multiply params - A: $(paramsData.A)")
+			out.println("$debugMSG - Parsed multiply params - B: $(paramsData.B)")
+			
+			// Try to parse matrices
+			Matrix matrixA = remoteComponent.charToMatrix(paramsData.A)
+			if (matrixA == null || matrixA.lines == null) {
+				out.println("$debugMSG - ERROR: Failed to parse matrix A from: $(paramsData.A)")
+				return rpc.buildResponse(method, "400")
+			}
+			out.println("$debugMSG - Matrix A parsed successfully - lines: $(matrixA.lines.arrayLength)")
+			
+			Matrix matrixB = remoteComponent.charToMatrix(paramsData.B)
+			if (matrixB == null || matrixB.lines == null) {
+				out.println("$debugMSG - ERROR: Failed to parse matrix B from: $(paramsData.B)")
+				return rpc.buildResponse(method, "400")
+			}
+			out.println("$debugMSG - Matrix B parsed successfully - lines: $(matrixB.lines.arrayLength)")
+			
+			Matrix result = remoteComponent.multiply(matrixA, matrixB)
+			char resultStr[] = remoteComponent.matrixToChar(result)
+			out.println("$debugMSG - Multiply result: $(resultStr)")
+			return rpc.buildResponseWithData("multiply", "200", resultStr)
 		}
 
+		out.println("$debugMSG - ERROR: Unknown method: $(method)")
 		return rpc.buildResponse(method, "404")
 	}
 
+	char[] Remote:processHTTPRequest(HTTPMessage request) {
+		// Extract POST body which should contain JSON RPC request
+		if (request.postData == null || request.postData.arrayLength == 0) {
+			out.println("$debugMSG - ERROR: Empty or null POST data")
+			Response errorRes = rpc.buildResponse("", "400")
+			return httpUtil.buildHTTPResponse(400, "Bad Request", HTTPUtil.SERVER_NAME, 0, "application/json", "")
+		}
+		
+		out.println("$debugMSG - Processing HTTP request")
+		out.println("$debugMSG - POST data length: $(request.postData.arrayLength)")
+		out.println("$debugMSG - POST data: $(request.postData)")
+		
+		// Parse JSON body to Request object
+		// The HTTP body format is: {"meta": [...], "content": "..."}
+		Request req = je.jsonToData(request.postData, typeof(Request))
+		
+		if (req == null) {
+			out.println("$debugMSG - ERROR: Failed to parse Request from POST data")
+			Response errorRes = rpc.buildResponse("", "400")
+			char responseBody[] = je.jsonFromData(errorRes)
+			return httpUtil.buildHTTPResponse(400, "Bad Request", HTTPUtil.SERVER_NAME, responseBody.arrayLength, "application/json", responseBody)
+		}
+		
+		if (req.meta == null) {
+			out.println("$debugMSG - ERROR: Request has null meta")
+		} else {
+			out.println("$debugMSG - Request meta length: $(req.meta.arrayLength)")
+		}
+		
+		if (req.content == null) {
+			out.println("$debugMSG - ERROR: Request has null content")
+		} else {
+			out.println("$debugMSG - Request content length: $(req.content.arrayLength)")
+			out.println("$debugMSG - Request content (raw): $(req.content)")
+			
+			// Debug: print first 10 characters as ASCII codes
+			char debugAscii[] = "First chars as ASCII: "
+			int debugLimit = 10
+			if (req.content.arrayLength < debugLimit) debugLimit = req.content.arrayLength
+			for (int di = 0; di < debugLimit; di++) {
+				debugAscii = new char[](debugAscii, iu.makeString(req.content[di]), " ")
+			}
+			out.println("$debugMSG - $(debugAscii)")
+			
+			// WORKAROUND: Dana JSON parser doesn't properly unescape nested JSON strings
+			// Check if content starts with { followed by backslash and unescape manually
+			// We check multiple positions since backslash might appear in different locations
+			bool needsUnescape = false
+			for (int checkIdx = 0; checkIdx < req.content.arrayLength - 1; checkIdx++) {
+				if (req.content[checkIdx] == 92) {  // 92 is ASCII for backslash
+					needsUnescape = true
+					out.println("$debugMSG - Found backslash at position $(iu.makeString(checkIdx))")
+					break
+				}
+			}
+			
+			if (needsUnescape) {
+				out.println("$debugMSG - Content has escaped characters, unescaping manually")
+				char unescapedContent[] = unescapeJSONString(req.content)
+				out.println("$debugMSG - Request content (unescaped): $(unescapedContent)")
+				// Create new Request with unescaped content
+				req = new Request(req.meta, unescapedContent)
+			} else {
+				out.println("$debugMSG - No backslashes found in content, skipping unescape")
+			}
+		}
+		
+		// Process the request
+		Response res = process(req)
+		
+		if (res == null) {
+			out.println("$debugMSG - ERROR: process() returned null response")
+			res = rpc.buildResponse("", "500")
+		}
+		
+		// Convert Response to HTTP response
+		// Build JSON response body
+		char responseBody[] = je.jsonFromData(res)
+		out.println("$debugMSG - Response body: $(responseBody)")
+		
+		return httpUtil.buildHTTPResponse(
+			200,
+			"OK",
+			HTTPUtil.SERVER_NAME,
+			responseBody.arrayLength,
+			"application/json",
+			responseBody
+		)
+	}
 
 }
 
