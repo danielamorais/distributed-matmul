@@ -1,0 +1,29 @@
+uses server.WebServer
+
+component provides App requires io.Output out, data.IntUtil iu, System system, server.ServerProcessLoop loop {
+    int App:main(AppParam params[]) {
+        int mode = WebServer.MODE_LOCAL
+        if(params.arrayLength > 0) {
+            int provided = iu.intFromString(params[0].string)
+            if(provided == WebServer.MODE_PROXY || provided == WebServer.MODE_ADAPTIVE || provided == WebServer.MODE_LOCAL) {
+                mode = provided
+            }
+        }
+
+        loop.configure(mode)
+        system.setProcessLoop(loop)
+        out.println("WebServerApp running in mode $(iu.makeString(mode)) with ProcessLoop.")
+        out.println("")
+        out.println("========================================")
+        out.println("  Dana Web Server (Pure Dana Backend)")
+        out.println("========================================")
+        out.println("Server running at http://localhost:2001")
+        out.println("Open: http://localhost:2001/xdana.html")
+        out.println("========================================")
+        out.println("")
+        
+        return 0
+    }
+}
+
+

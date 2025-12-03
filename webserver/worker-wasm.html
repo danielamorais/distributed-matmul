@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dana WASM Worker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .worker-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 30px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 5px;
+        }
+        
+        .header .subtitle {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .badge {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 8px;
+        }
+        
+        .worker-info {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .worker-info .label {
+            color: #666;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+        
+        .worker-info .value {
+            color: #333;
+            font-size: 16px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .status {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .status.idle {
+            background: #e3f2fd;
+            border-left: 4px solid #2196F3;
+        }
+        
+        .status.working {
+            background: #fff3e0;
+            border-left: 4px solid #ff9800;
+        }
+        
+        .status.loading {
+            background: #f3e5f5;
+            border-left: 4px solid #9c27b0;
+        }
+        
+        .status.error {
+            background: #ffebee;
+            border-left: 4px solid #f44336;
+        }
+        
+        .status-text {
+            font-size: 14px;
+            color: #333;
+        }
+        
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ccc;
+        }
+        
+        .status.idle .status-indicator {
+            background: #2196F3;
+        }
+        
+        .status.working .status-indicator {
+            background: #ff9800;
+            animation: pulse 1s infinite;
+        }
+        
+        .status.loading .status-indicator {
+            background: #9c27b0;
+            animation: pulse 1s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .controls {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 32px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+        }
+        
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .stat-card .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        
+        .stat-card .stat-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+        }
+        
+        .log-container {
+            background: #1e1e1e;
+            border-radius: 8px;
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        
+        .log-entry {
+            color: #d4d4d4;
+            margin-bottom: 4px;
+            line-height: 1.5;
+        }
+        
+        .log-entry.info {
+            color: #4fc3f7;
+        }
+        
+        .log-entry.success {
+            color: #66bb6a;
+        }
+        
+        .log-entry.error {
+            color: #ef5350;
+        }
+        
+        .log-entry .timestamp {
+            color: #888;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="worker-container">
+        <div class="header">
+            <h1>Dana WASM Worker <span class="badge">WASM</span></h1>
+            <p class="subtitle">Distributed Matrix Multiplication Worker</p>
+        </div>
+        
+        <div class="worker-info">
+            <div class="label">Worker ID</div>
+            <div class="value" id="workerId">Initializing...</div>
+        </div>
+        
+        <div id="statusBar" class="status loading">
+            <span class="status-text" id="statusText">Loading Dana WASM...</span>
+            <span class="status-indicator"></span>
+        </div>
+        
+        <div class="controls">
+            <button id="startBtn" onclick="startWorker()" disabled>Start Worker</button>
+            <button id="stopBtn" onclick="stopWorker()" disabled style="background: #f44336; display: none;">Stop Worker</button>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value" id="tasksCompleted">0</div>
+                <div class="stat-label">Completed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="tasksProcessing">0</div>
+                <div class="stat-label">Processing</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="totalTime">0s</div>
+                <div class="stat-label">Uptime</div>
+            </div>
+        </div>
+        
+        <div class="log-container" id="logContainer">
+            <div class="log-entry info">
+                <span class="timestamp">[--:--:--]</span>
+                <span>Initializing Dana WASM runtime...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load Dana WASM -->
+    <script>
+        // Dana request handler - uses ServerProcessLoop mechanism
+        let danaEnqueueRequest = null;
+        let danaHasPendingResponse = null;
+        let danaNextResponse = null;
+        let danaReady = false;
+        
+        // IMPORTANT: Define Module BEFORE loading file_system.js!
+        var Module = {
+            arguments: ['-dh', '.', 'app/main.o'],  // Load full Dana server with matmul handler
+            preRun: [],  // file_system.js will push runWithFS to this array
+            onRuntimeInitialized: function() {
+                console.log('[Dana] Runtime initialized!');
+                console.log('[Dana] Server initialized with matmul handler');
+                
+                // Comprehensive inspection of Module
+                console.log('[Dana] ===== COMPREHENSIVE MODULE INSPECTION =====');
+                console.log('[Dana] Module type:', typeof Module);
+                console.log('[Dana] Module keys (all):', Object.keys(Module));
+                
+                // Check for cwrap/ccall
+                if (Module.cwrap) {
+                    console.log('[Dana] Module.cwrap available');
+                } else {
+                    console.log('[Dana] Module.cwrap NOT available');
+                }
+                
+                if (Module.ccall) {
+                    console.log('[Dana] Module.ccall available');
+                } else {
+                    console.log('[Dana] Module.ccall NOT available');
+                }
+                
+                // Check for exported functions (functions starting with _)
+                const exportedFunctions = [];
+                for (const key in Module) {
+                    if (key.startsWith('_') && typeof Module[key] === 'function') {
+                        exportedFunctions.push(key);
+                    }
+                }
+                console.log('[Dana] Exported functions (starting with _):', exportedFunctions);
+                
+                // Check Module.asm for WASM exports
+                if (Module.asm) {
+                    console.log('[Dana] Module.asm available');
+                    const asmExports = Object.keys(Module.asm || {}).filter(k => k.startsWith('_'));
+                    console.log('[Dana] Module.asm exports:', asmExports.slice(0, 20)); // Limit to first 20
+                }
+                
+                // Try multiple approaches to call Dana code
+                let foundMethod = false;
+                
+                // Approach 1: Try ServerProcessLoop methods (if exposed)
+                const processLoopMethods = [
+                    'dana_enqueueRequest',
+                    'dana_hasPendingResponse', 
+                    'dana_nextResponse',
+                    '_dana_enqueueRequest',
+                    '_dana_hasPendingResponse',
+                    '_dana_nextResponse'
+                ];
+                
+                for (const methodName of processLoopMethods) {
+                    try {
+                        if (methodName.startsWith('_')) {
+                            danaEnqueueRequest = Module.cwrap(methodName.substring(1), null, ['string']);
+                        } else {
+                            danaEnqueueRequest = Module.cwrap(methodName, null, ['string']);
+                        }
+                        console.log('[Dana] ✓ Found ServerProcessLoop method:', methodName);
+                        foundMethod = true;
+                        break;
+                    } catch (e) {
+                        // Try next method
+                    }
+                }
+                
+                // Approach 2: Try direct HTTP handler (if exposed)
+                const httpHandlerNames = [
+                    'dana_http_handleRequest',
+                    'dana_handleRequest',
+                    '_dana_http_handleRequest',
+                    '_dana_handleRequest',
+                    'handleRequest',
+                    '_handleRequest'
+                ];
+                
+                for (const handlerName of httpHandlerNames) {
+                    try {
+                        if (handlerName.startsWith('_')) {
+                            danaEnqueueRequest = Module.cwrap(handlerName.substring(1), 'string', ['string']);
+                        } else {
+                            danaEnqueueRequest = Module.cwrap(handlerName, 'string', ['string']);
+                        }
+                        console.log('[Dana] ✓ Found HTTP handler:', handlerName);
+                        foundMethod = true;
+                        break;
+                    } catch (e) {
+                        // Try next handler
+                    }
+                }
+                
+                // Approach 3: Try Module.ccall with various function names
+                if (Module.ccall && !foundMethod) {
+                    const testFunctions = [
+                        'dana_enqueueRequest',
+                        'dana_http_handleRequest',
+                        'dana_handleRequest',
+                        'ServerProcessLoop_enqueueRequest'
+                    ];
+                    
+                    for (const funcName of testFunctions) {
+                        try {
+                            // Test if function exists by trying to call it
+                            Module.ccall(funcName, 'string', ['string'], ['']);
+                            console.log('[Dana] ✓ Found function via ccall:', funcName);
+                            foundMethod = true;
+                            break;
+                        } catch (e) {
+                            // Function doesn't exist or can't be called this way
+                        }
+                    }
+                }
+                
+                // Approach 4: Check if we can access ProcessLoop instance
+                if (!foundMethod) {
+                    console.log('[Dana] ⚠ No direct method found. Checking for ProcessLoop access...');
+                    
+                    // Try to find ProcessLoop in Module
+                    for (const key in Module) {
+                        if (key.toLowerCase().includes('process') || key.toLowerCase().includes('loop')) {
+                            console.log('[Dana] Found potential ProcessLoop key:', key, typeof Module[key]);
+                        }
+                    }
+                }
+                
+                console.log('[Dana] ===== INSPECTION COMPLETE =====');
+                console.log('[Dana] Found callable method:', foundMethod ? 'YES' : 'NO');
+                
+                if (!foundMethod) {
+                    console.warn('[Dana] ⚠ WARNING: Could not find any way to call Dana code directly from JavaScript.');
+                    console.warn('[Dana] This confirms that Dana WASM does not export JavaScript-callable functions.');
+                    console.warn('[Dana] The system will attempt to use alternative mechanisms.');
+                }
+                
+                // Give Dana a moment to fully initialize
+                setTimeout(() => {
+                    onDanaReady();
+                }, 100);
+            }
+        };
+    </script>
+    <script src="file_system.js?v=5"></script>  <!-- Now Module exists! -->
+    <script async src="dana.js"></script>
+    
+    <script>
+        // Configuration
+        const COORDINATOR_URL = window.location.origin;
+        const POLL_INTERVAL = 2000;
+        
+        // Worker state
+        let workerId = null;
+        let isRunning = false;
+        let tasksCompleted = 0;
+        let currentTask = null;
+        let startTime = null;
+        
+        // Dana request queue for polling mechanism
+        let danaRequestQueue = [];
+        let danaResponseMap = new Map();
+        let danaRequestIdCounter = 0;
+        let danaPollInterval = null;
+        
+        function onDanaReady() {
+            log('Dana WASM runtime ready!', 'success');
+            danaReady = true;
+            
+            // Initialize worker
+            workerId = generateWorkerId();
+            document.getElementById('workerId').textContent = workerId;
+            log('Worker initialized with ID: ' + workerId, 'info');
+            
+            // Start polling Dana ProcessLoop for responses
+            startDanaPolling();
+            
+            updateStatus('Ready to work', 'idle');
+            document.getElementById('startBtn').disabled = false;
+        }
+        
+        // Poll Dana ProcessLoop to process requests and get responses
+        function startDanaPolling() {
+            if (danaPollInterval) return;
+            
+            danaPollInterval = setInterval(() => {
+                if (!danaReady || !Module) return;
+                
+                try {
+                    // If we have ServerProcessLoop methods, use them
+                    if (danaHasPendingResponse && danaNextResponse) {
+                        if (danaHasPendingResponse()) {
+                            const response = danaNextResponse();
+                            if (response) {
+                                processDanaResponse(response);
+                            }
+                        }
+                    }
+                    
+                    // Process any queued requests
+                    if (danaRequestQueue.length > 0 && danaEnqueueRequest) {
+                        const request = danaRequestQueue.shift();
+                        danaEnqueueRequest(request.httpRequest);
+                        danaResponseMap.set(request.id, request);
+                    }
+                } catch (e) {
+                    console.error('[Dana] Polling error:', e);
+                }
+            }, 10); // Poll every 10ms for responsiveness
+            
+            log('Dana ProcessLoop polling started', 'info');
+        }
+        
+        function stopDanaPolling() {
+            if (danaPollInterval) {
+                clearInterval(danaPollInterval);
+                danaPollInterval = null;
+            }
+        }
+        
+        function processDanaResponse(response) {
+            // Find the matching request
+            for (const [id, request] of danaResponseMap.entries()) {
+                if (request.pending) {
+                    request.pending = false;
+                    request.resolve(response);
+                    danaResponseMap.delete(id);
+                    return;
+                }
+            }
+        }
+        
+        function generateWorkerId() {
+            const random = Math.random().toString(36).substring(2, 15);
+            const timestamp = Date.now().toString(36);
+            return `worker-wasm-${timestamp}-${random}`;
+        }
+        
+        function log(message, type = 'info') {
+            const logContainer = document.getElementById('logContainer');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            
+            const now = new Date();
+            const timestamp = now.toLocaleTimeString();
+            
+            entry.innerHTML = `<span class="timestamp">[${timestamp}]</span><span>${message}</span>`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            
+            while (logContainer.children.length > 50) {
+                logContainer.removeChild(logContainer.firstChild);
+            }
+        }
+        
+        function updateStatus(text, state = 'idle') {
+            const statusBar = document.getElementById('statusBar');
+            const statusText = document.getElementById('statusText');
+            
+            statusBar.className = `status ${state}`;
+            statusText.textContent = text;
+        }
+        
+        function updateStats() {
+            document.getElementById('tasksCompleted').textContent = tasksCompleted;
+            document.getElementById('tasksProcessing').textContent = currentTask ? '1' : '0';
+            
+            if (startTime) {
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                document.getElementById('totalTime').textContent = elapsed + 's';
+            }
+        }
+        
+        // Matrix multiplication using Dana WASM ONLY - NO JAVASCRIPT FALLBACK
+        async function multiplyMatricesWithDana(A, B) {
+            const aStr = JSON.stringify(A);
+            const bStr = JSON.stringify(B);
+            
+            log(`Computing with Dana WASM: ${aStr} × ${bStr}`, 'info');
+            
+            if (!danaReady || !Module) {
+                const error = 'FATAL: Dana WASM runtime not initialized. Cannot compute without Dana.';
+                log(error, 'error');
+                throw new Error(error);
+            }
+            
+            // Build HTTP POST request as string (Dana expects raw HTTP request format)
+            const requestBody = JSON.stringify({A: aStr, B: bStr});
+            const httpRequest = `POST /matmul HTTP/1.1\r\n` +
+                `Host: localhost\r\n` +
+                `Content-Type: application/json\r\n` +
+                `Content-Length: ${requestBody.length}\r\n` +
+                `\r\n` +
+                `${requestBody}`;
+            
+            try {
+                // Try multiple approaches to call Dana
+                let httpResponse = null;
+                
+                // Approach 1: Use ServerProcessLoop enqueueRequest if available (returns void, uses polling)
+                if (danaEnqueueRequest && danaHasPendingResponse && danaNextResponse) {
+                    log('Using ServerProcessLoop enqueueRequest mechanism...', 'info');
+                    
+                    return new Promise((resolve, reject) => {
+                        const requestId = danaRequestIdCounter++;
+                        const request = {
+                            id: requestId,
+                            httpRequest: httpRequest,
+                            pending: true,
+                            resolve: (response) => {
+                                try {
+                                    const parts = response.split('\r\n\r\n');
+                                    if (parts.length < 2) {
+                                        throw new Error('Invalid HTTP response from Dana WASM');
+                                    }
+                                    const responseBody = parts[1];
+                                    const result = JSON.parse(responseBody);
+                                    log('Dana WASM computation successful!', 'success');
+                                    resolve(result);
+                                } catch (e) {
+                                    reject(new Error('Failed to parse Dana response: ' + e.message));
+                                }
+                            },
+                            reject: reject
+                        };
+                        
+                        danaResponseMap.set(requestId, request);
+                        danaRequestQueue.push(request);
+                        
+                        // Enqueue immediately if possible
+                        try {
+                            danaEnqueueRequest(httpRequest);
+                        } catch (e) {
+                            log('Failed to enqueue request: ' + e.message, 'error');
+                        }
+                        
+                        // Set timeout
+                        setTimeout(() => {
+                            if (request.pending) {
+                                request.pending = false;
+                                danaResponseMap.delete(requestId);
+                                reject(new Error('Dana computation timeout (30s)'));
+                            }
+                        }, 30000); // 30 second timeout
+                    });
+                }
+                
+                // Approach 2: Try direct call if it's a function that returns a value (synchronous)
+                if (danaEnqueueRequest && typeof danaEnqueueRequest === 'function') {
+                    try {
+                        log('Trying direct synchronous Dana call...', 'info');
+                        httpResponse = danaEnqueueRequest(httpRequest);
+                        if (httpResponse && typeof httpResponse === 'string') {
+                            // Parse HTTP response
+                            const parts = httpResponse.split('\r\n\r\n');
+                            if (parts.length < 2) {
+                                throw new Error('Invalid HTTP response from Dana WASM');
+                            }
+                            const responseBody = parts[1];
+                            const result = JSON.parse(responseBody);
+                            log('Dana WASM computation successful (direct call)!', 'success');
+                            return result;
+                        }
+                    } catch (e) {
+                        log('Direct call failed: ' + e.message, 'error');
+                    }
+                }
+                
+                // Approach 3: Use Module.ccall to try calling Dana functions
+                if (Module.ccall) {
+                    try {
+                        log('Trying Module.ccall with various function names...', 'info');
+                        // Try common function name patterns
+                        const functionNames = [
+                            'dana_enqueueRequest',
+                            'dana_http_handleRequest',
+                            'dana_handleRequest',
+                            'ServerProcessLoop_enqueueRequest',
+                            '_dana_enqueueRequest',
+                            '_dana_http_handleRequest'
+                        ];
+                        
+                        for (const funcName of functionNames) {
+                            try {
+                                // Remove leading underscore for ccall
+                                const callName = funcName.startsWith('_') ? funcName.substring(1) : funcName;
+                                httpResponse = Module.ccall(callName, 'string', ['string'], [httpRequest]);
+                                if (httpResponse && typeof httpResponse === 'string' && httpResponse.length > 0) {
+                                    const parts = httpResponse.split('\r\n\r\n');
+                                    if (parts.length >= 2) {
+                                        const responseBody = parts[1];
+                                        const result = JSON.parse(responseBody);
+                                        log('Dana WASM computation successful via Module.ccall(' + callName + ')!', 'success');
+                                        return result;
+                                    }
+                                }
+                            } catch (e) {
+                                // Try next function name
+                                continue;
+                            }
+                        }
+                    } catch (e) {
+                        log('Module.ccall failed: ' + e.message, 'error');
+                    }
+                }
+                
+                // Approach 4: Try using fetch to Node.js server (workaround)
+                // Since JavaScript cannot call Dana directly, we route through the server
+                // The server could potentially bridge to Dana WASM, but for now it uses the coordinator
+                try {
+                    log('Using fetch() workaround: routing through Node.js server...', 'info');
+                    log('NOTE: This routes through coordinator, not direct Dana WASM call', 'info');
+                    
+                    // Make request to Node.js server's /matmul endpoint
+                    // This will create a task, but we're the worker, so we'd create a circular dependency
+                    // Instead, we need a direct computation endpoint
+                    
+                    // Actually, wait - we ARE the worker. We should compute locally.
+                    // But since we can't call Dana, we have a problem.
+                    
+                    // FINAL WORKAROUND: Make HTTP request to a special endpoint that Dana handles
+                    // But Dana's ProcessLoop doesn't intercept fetch() calls automatically
+                    // So this won't work either
+                    
+                    log('Fetch workaround not viable - Dana ProcessLoop does not intercept fetch()', 'error');
+                } catch (e) {
+                    log('Fetch approach failed: ' + e.message, 'error');
+                }
+                
+                // If all approaches fail, document the finding
+                const moduleInfo = {
+                    hasCwrap: !!Module.cwrap,
+                    hasCcall: !!Module.ccall,
+                    exportedFunctions: Object.keys(Module).filter(k => 
+                        k.startsWith('_') && typeof Module[k] === 'function'
+                    ).slice(0, 10),
+                    danaEnqueueRequest: typeof danaEnqueueRequest,
+                    danaHasPendingResponse: typeof danaHasPendingResponse,
+                    danaNextResponse: typeof danaNextResponse,
+                    danaProcessLoopRunning: true // We know it's running from console logs
+                };
+                
+                const conclusion = 
+                    'CONCLUSION: JavaScript CANNOT directly call Dana component methods.\n' +
+                    'Dana WASM runtime does not export JavaScript-callable functions.\n' +
+                    'Dana ProcessLoop IS running (confirmed by console logs),\n' +
+                    'but there is no JavaScript bridge to communicate with it.\n' +
+                    '\n' +
+                    'REQUIRED: Dana compiler/runtime needs to export functions like:\n' +
+                    '  - dana_enqueueRequest(char[] httpRequest)\n' +
+                    '  - dana_hasPendingResponse() -> bool\n' +
+                    '  - dana_nextResponse() -> char[]\n' +
+                    '\n' +
+                    'OR: Dana runtime needs to intercept fetch() calls and route them to ProcessLoop.\n' +
+                    '\n' +
+                    'Module info: ' + JSON.stringify(moduleInfo, null, 2);
+                
+                log(conclusion, 'error');
+                console.error('[Dana] ' + conclusion);
+                
+                // Throw error to prevent JavaScript fallback computation
+                throw new Error(
+                    'FATAL: Cannot compute - JavaScript cannot call Dana WASM code.\n' +
+                    'Dana ProcessLoop is running but inaccessible from JavaScript.\n' +
+                    'See console for detailed analysis.'
+                );
+                
+            } catch (error) {
+                const errorMsg = 'Dana WASM computation failed: ' + error.message;
+                log(errorMsg, 'error');
+                throw new Error(errorMsg);
+            }
+        }
+        
+        async function pollForTask() {
+            const response = await fetch(`${COORDINATOR_URL}/task/next?workerId=${workerId}`);
+            
+            if (response.status === 204) {
+                return null;
+            }
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
+            return await response.json();
+        }
+        
+        async function computeTask(data) {
+            if (!data || !data.A || !data.B) {
+                throw new Error('Invalid task data');
+            }
+            
+            const A = JSON.parse(data.A);
+            const B = JSON.parse(data.B);
+            
+            const result = await multiplyMatricesWithDana(A, B);
+            
+            return JSON.stringify(result);
+        }
+        
+        async function submitResult(taskId, result) {
+            const response = await fetch(`${COORDINATOR_URL}/task/${taskId}/result`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ result })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Failed to submit: HTTP ${response.status}`);
+            }
+            
+            return await response.json();
+        }
+        
+        async function workerLoop() {
+            while (isRunning) {
+                try {
+                    updateStatus('Polling for tasks...', 'idle');
+                    
+                    const task = await pollForTask();
+                    
+                    if (task && task.taskId) {
+                        currentTask = task;
+                        updateStats();
+                        
+                        log(`Received task #${task.taskId}`, 'info');
+                        updateStatus(`Processing task #${task.taskId}...`, 'working');
+                        
+                        const result = await computeTask(task.data);
+                        
+                        log(`Submitting result for task #${task.taskId}`, 'info');
+                        await submitResult(task.taskId, result);
+                        
+                        tasksCompleted++;
+                        currentTask = null;
+                        updateStats();
+                        
+                        log(`Task #${task.taskId} completed successfully`, 'success');
+                    }
+                    
+                } catch (error) {
+                    log(`Worker error: ${error.message}`, 'error');
+                    updateStatus('Error - retrying...', 'error');
+                    currentTask = null;
+                    updateStats();
+                }
+                
+                await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+            }
+            
+            updateStatus('Stopped', 'idle');
+        }
+        
+        function startWorker() {
+            if (!danaReady) {
+                log('Dana WASM not ready yet', 'error');
+                return;
+            }
+            
+            if (isRunning) return;
+            
+            isRunning = true;
+            startTime = Date.now();
+            
+            document.getElementById('startBtn').style.display = 'none';
+            document.getElementById('stopBtn').style.display = 'inline-block';
+            
+            log('Worker started', 'success');
+            workerLoop();
+        }
+        
+        function stopWorker() {
+            if (!isRunning) return;
+            
+            isRunning = false;
+            stopDanaPolling();
+            
+            document.getElementById('startBtn').style.display = 'inline-block';
+            document.getElementById('stopBtn').style.display = 'none';
+            
+            log('Worker stopped', 'info');
+        }
+        
+        // Auto-update stats
+        setInterval(updateStats, 1000);
+    </script>
+</body>
+</html>
+

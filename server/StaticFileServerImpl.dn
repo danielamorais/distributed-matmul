@@ -1,0 +1,150 @@
+uses server.StaticFileServer
+
+const char debugMSG[] = "[@StaticFileServer]"
+
+component provides server.StaticFileServer requires io.Output out, io.FileSystem fileSystem, io.File,
+    data.StringUtil su, data.IntUtil iu {
+    
+    char basePath[] = "webserver"
+    
+    void StaticFileServer:setBasePath(char path[]) {
+        basePath = path
+    }
+    
+    Response StaticFileServer:handle(HTTPMessage request) {
+        // Only handle GET requests
+        if (request.command != "GET") {
+            return null
+        }
+        
+        // Skip API endpoints
+        if (su.startsWith(request.resource, "/task") || 
+            su.startsWith(request.resource, "/result") || 
+            su.startsWith(request.resource, "/stats") ||
+            su.startsWith(request.resource, "/matmul")) {
+            return null
+        }
+        
+        // Build file path
+        char filePath[] = basePath
+        if (request.resource == "/" || request.resource == "") {
+            filePath = new char[](filePath, "/xdana.html")
+        } else {
+            filePath = new char[](filePath, request.resource)
+        }
+        
+        // Check if file exists
+        if (!fileSystem.exists(filePath)) {
+            out.println("$debugMSG File not found: $filePath")
+            return build404Response()
+        }
+        
+        FileInfo info = fileSystem.getInfo(filePath)
+        if (info.type == FileInfo.TYPE_DIR) {
+            // Try index.html in directory
+            char indexPath[] = new char[](filePath, "/index.html")
+            if (fileSystem.exists(indexPath)) {
+                filePath = indexPath
+            } else {
+                return build404Response()
+            }
+        }
+        
+        // Read file content
+        File fd = new File(filePath, File.READ)
+        byte content[] = fd.read(fd.getSize())
+        fd.close()
+        
+        // Convert bytes to chars
+        char fileContent[] = bytesToChars(content)
+        
+        // Determine MIME type
+        char mimeType[] = getMIMEType(filePath)
+        
+        out.println("$debugMSG Serving file: $filePath ($(iu.makeString(fileContent.arrayLength)) bytes, $mimeType)")
+        
+        // Build response with COOP/COEP headers
+        return buildFileResponse(200, "OK", fileContent, mimeType)
+    }
+    
+    char[] getMIMEType(char filePath[]) {
+        if (su.endsWith(filePath, ".html") || su.endsWith(filePath, ".htm")) {
+            return "text/html"
+        }
+        if (su.endsWith(filePath, ".js")) {
+            return "application/javascript"
+        }
+        if (su.endsWith(filePath, ".wasm")) {
+            return "application/wasm"
+        }
+        if (su.endsWith(filePath, ".json")) {
+            return "application/json"
+        }
+        if (su.endsWith(filePath, ".css")) {
+            return "text/css"
+        }
+        if (su.endsWith(filePath, ".png")) {
+            return "image/png"
+        }
+        if (su.endsWith(filePath, ".jpg") || su.endsWith(filePath, ".jpeg")) {
+            return "image/jpeg"
+        }
+        if (su.endsWith(filePath, ".gif")) {
+            return "image/gif"
+        }
+        if (su.endsWith(filePath, ".svg")) {
+            return "image/svg+xml"
+        }
+        if (su.endsWith(filePath, ".ttf")) {
+            return "font/ttf"
+        }
+        if (su.endsWith(filePath, ".woff") || su.endsWith(filePath, ".woff2")) {
+            return "font/woff2"
+        }
+        return "text/plain"
+    }
+    
+    char[] bytesToChars(byte b[]) {
+        char result[] = new char[b.arrayLength]
+        for (int i = 0; i < b.arrayLength; i++) {
+            result[i] = b[i]
+        }
+        return result
+    }
+    
+    Response buildFileResponse(int code, char status[], char content[], char mimeType[]) {
+        return new Response(
+            code,
+            status,
+            HTTPUtil.SERVER_NAME,
+            content.arrayLength,
+            mimeType,
+            content
+        )
+    }
+    
+    Response build404Response() {
+        char content[] = "<html><body><h1>404 Not Found</h1></body></html>"
+        return new Response(
+            404,
+            "Not Found",
+            HTTPUtil.SERVER_NAME,
+            content.arrayLength,
+            "text/html",
+            content
+        )
+    }
+    
+    Response build500Response() {
+        char content[] = "<html><body><h1>500 Internal Server Error</h1></body></html>"
+        return new Response(
+            500,
+            "Internal Server Error",
+            HTTPUtil.SERVER_NAME,
+            content.arrayLength,
+            "text/html",
+            content
+        )
+    }
+}
+

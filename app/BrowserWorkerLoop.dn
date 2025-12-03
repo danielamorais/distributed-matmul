@@ -1,0 +1,301 @@
+// Browser Worker ProcessLoop Implementation
+// Incrementally building up from minimal version
+// Step 3: Added actual HTTP polling with async context
+
+uses net.http.Header
+
+component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu, 
+    data.StringUtil su, net.http.HTTPRequest http, data.json.JSONParser jp,
+    data.json.JSONEncoder je, matmul.Matmul matmul {
+    
+    const char COORDINATOR_URL[] = "http://localhost:8080/task/next"
+    const int POLL_INTERVAL_LOOPS = 200 // Approximate loops for 2 seconds
+    
+    char workerId[] = null
+    int loopCount = 0
+    int lastPollLoop = 0
+    
+    const char RESULT_URL_PREFIX[] = "http://localhost:8080/task/"
+    const char RESULT_URL_SUFFIX[] = "/result"
+    
+    // HTTP request state (for async operations)
+    HTTPResponse currentResponse = null
+    bool waitingForResponse = false
+    int currentTaskId = 0
+    char currentResult[] = null
+    int requestType = 0 // 0=none, 1=poll, 2=submit
+    int tasksCompleted = 0
+    
+    BrowserWorkerLoop:BrowserWorkerLoop() {
+        // Generate worker ID on initialization
+        workerId = new char[]("worker-wasm-", iu.makeString(loopCount))
+        out.println("[@BrowserWorkerWASM] Worker ID: $(workerId)")
+        out.println("[@BrowserWorkerWASM] Will poll: $(COORDINATOR_URL)")
+    }
+    
+    // Loop implementation - increment counter and poll periodically
+    bool BrowserWorkerLoop:loop() {
+        loopCount++
+        
+        // Check if we're waiting for an HTTP response
+        if (waitingForResponse) {
+            if (currentResponse != null) {
+                handleResponse()
+                // Only reset if we're not starting a new request
+                // (startSubmitRequest sets waitingForResponse = true and requestType = 2)
+                if (requestType == 0) {
+                    waitingForResponse = false
+                    currentResponse = null
+                } else {
+                    // We started a new request, clear the old response
+                    // The new request will set currentResponse when it completes
+                    currentResponse = null
+                }
+            }
+            // Still waiting, return true to continue loop
+            return true
+        }
+        
+        // Log every 100 loops (approximately every second)
+        if (loopCount % 100 == 0) {
+            out.println("[@BrowserWorkerWASM] Loop count: $(iu.makeString(loopCount))")
+        }
+        
+        // Time to poll for new task?
+        if (loopCount - lastPollLoop >= POLL_INTERVAL_LOOPS) {
+            lastPollLoop = loopCount
+            startPollRequest()
+        }
+        
+        return true
+    }
+    
+    void startPollRequest() {
+        if (waitingForResponse) return // Already have a request in flight
+        
+        out.println("[@BrowserWorkerWASM] Polling for tasks...")
+        
+        // Build poll URL with worker ID
+        char pollUrl[] = new char[](COORDINATOR_URL, "?workerId=", workerId)
+        
+        // Build headers
+        Header headers[] = new Header[](
+            new Header("Content-Type", "application/json")
+        )
+        
+        // Start async request
+        // IMPORTANT: HTTPRequest must be called from async context in WASM
+        requestType = 1 // poll request
+        waitingForResponse = true
+        
+        // Execute HTTP request in async context
+        asynch::executePollRequest(pollUrl, headers)
+    }
+    
+    void executePollRequest(char url[], Header headers[]) {
+        // This runs in async context, allowing HTTP requests in WASM
+        // http.get() must be called from async context, not from ProcessLoop:loop()
+        currentResponse = http.get(url, headers, false)
+    }
+    
+    void handlePollResponse() {
+        if (currentResponse == null) {
+            out.println("[@BrowserWorkerWASM] No response from coordinator")
+            return
+        }
+        
+        if (currentResponse.responseCode == "204") {
+            // No tasks available - this is normal
+            return
+        }
+        
+        if (currentResponse.responseCode != "200") {
+            out.println("[@BrowserWorkerWASM] Error response: $(currentResponse.responseCode)")
+            return
+        }
+        
+        // Convert byte[] content to char[] for JSON parsing
+        if (currentResponse.content == null || currentResponse.content.arrayLength == 0) {
+            out.println("[@BrowserWorkerWASM] Empty response body")
+            return
+        }
+        
+        char responseBody[] = new char[currentResponse.content.arrayLength]
+        for (int i = 0; i < currentResponse.content.arrayLength; i++) {
+            responseBody[i] = currentResponse.content[i]
+        }
+        
+        // Parse JSON task - server sends {taskId, data: {A, B}}
+        JSONElement root = jp.parseDocument(responseBody)
+        if (root == null) {
+            out.println("[@BrowserWorkerWASM] Failed to parse task response")
+            return
+        }
+        
+        // Extract taskId
+        JSONElement taskIdElem = jp.getValue(root, "taskId")
+        if (taskIdElem == null || taskIdElem.type != JSONElement.TYPE_NUMBER) {
+            out.println("[@BrowserWorkerWASM] Missing or invalid taskId")
+            return
+        }
+        int taskId = iu.intFromString(taskIdElem.value)
+        
+        // Extract data object
+        JSONElement dataElem = jp.getValue(root, "data")
+        if (dataElem == null || dataElem.type != JSONElement.TYPE_OBJECT) {
+            out.println("[@BrowserWorkerWASM] Missing or invalid data field")
+            return
+        }
+        
+        // Extract A and B from data object
+        JSONElement aElem = jp.getValue(dataElem, "A")
+        JSONElement bElem = jp.getValue(dataElem, "B")
+        
+        if (aElem == null || bElem == null || 
+            aElem.type != JSONElement.TYPE_STRING || bElem.type != JSONElement.TYPE_STRING) {
+            out.println("[@BrowserWorkerWASM] Missing or invalid A/B fields")
+            return
+        }
+        
+        char dataA[] = aElem.value
+        char dataB[] = bElem.value
+        
+        out.println("[@BrowserWorkerWASM] Received task #$(iu.makeString(taskId))")
+        out.println("[@BrowserWorkerWASM] Matrix A: $(dataA)")
+        out.println("[@BrowserWorkerWASM] Matrix B: $(dataB)")
+        
+        // Compute result using matmul component
+        char result[] = computeTask(taskId, dataA, dataB)
+        
+        if (result == null) {
+            out.println("[@BrowserWorkerWASM] Computation failed")
+            return
+        }
+        
+        out.println("[@BrowserWorkerWASM] Computation complete: $(result)")
+        
+        // Start submit request
+        out.println("[@BrowserWorkerWASM] About to submit result for task #$(iu.makeString(taskId))")
+        currentTaskId = taskId
+        currentResult = result
+        
+        // Clear current response and reset waitingForResponse before starting new request
+        // (the submit request will set a new currentResponse when it completes)
+        currentResponse = null
+        waitingForResponse = false  // Reset so startSubmitRequest() doesn't return early
+        
+        out.println("[@BrowserWorkerWASM] Calling startSubmitRequest()...")
+        startSubmitRequest(taskId, result)
+        if (waitingForResponse) {
+            out.println("[@BrowserWorkerWASM] startSubmitRequest() called, waitingForResponse=true")
+        } else {
+            out.println("[@BrowserWorkerWASM] startSubmitRequest() called, waitingForResponse=false")
+        }
+        // Note: waitingForResponse is set to true in startSubmitRequest()
+        // The loop will handle the submit response in the next iteration
+    }
+    
+    void handleResponse() {
+        if (currentResponse == null) return
+        
+        int oldRequestType = requestType
+        
+        if (requestType == 1) {
+            // Handle poll response
+            handlePollResponse()
+        } else if (requestType == 2) {
+            // Handle submit response
+            handleSubmitResponse()
+        }
+        
+        // Only reset requestType if we didn't start a new request
+        // (startSubmitRequest sets requestType = 2, so if it's still 2, we started a new request)
+        if (requestType == oldRequestType) {
+            requestType = 0
+        }
+    }
+    
+    void startSubmitRequest(int taskId, char result[]) {
+        if (waitingForResponse) {
+            out.println("[@BrowserWorkerWASM] startSubmitRequest() early return: waitingForResponse=true")
+            return // Already have a request in flight
+        }
+        
+        out.println("[@BrowserWorkerWASM] Submitting result for task #$(iu.makeString(taskId))")
+        
+        // Build result URL
+        char resultUrl[] = new char[](RESULT_URL_PREFIX, iu.makeString(taskId), RESULT_URL_SUFFIX)
+        
+        // Build JSON body - create a data structure for JSON encoding
+        ResultData resultData = new ResultData()
+        resultData.result = result
+        char jsonBody[] = je.jsonFromData(resultData)
+        
+        // Build headers
+        Header headers[] = new Header[](
+            new Header("Content-Type", "application/json")
+        )
+        
+        // Start async request
+        requestType = 2 // submit request
+        waitingForResponse = true
+        
+        // Execute HTTP request in async context
+        asynch::executeSubmitRequest(resultUrl, headers, jsonBody)
+    }
+    
+    void executeSubmitRequest(char url[], Header headers[], char postData[]) {
+        // This runs in async context, allowing HTTP requests in WASM
+        // http.post() must be called from async context, not from ProcessLoop:loop()
+        currentResponse = http.post(url, headers, postData, false)
+    }
+    
+    void handleSubmitResponse() {
+        if (currentResponse == null || currentResponse.responseCode != "200") {
+            out.println("[@BrowserWorkerWASM] Failed to submit result for task #$(iu.makeString(currentTaskId))")
+            return
+        }
+        
+        tasksCompleted++
+        out.println("[@BrowserWorkerWASM] Task #$(iu.makeString(currentTaskId)) completed successfully!")
+        out.println("[@BrowserWorkerWASM] Total tasks completed: $(iu.makeString(tasksCompleted))")
+    }
+    
+    char[] computeTask(int taskId, char dataA[], char dataB[]) {
+        if (dataA == null || dataB == null) {
+            out.println("[@BrowserWorkerWASM] Missing matrix data")
+            return null
+        }
+        
+        out.println("[@BrowserWorkerWASM] Computing: A=$(dataA), B=$(dataB)")
+        
+        // Parse matrices
+        Matrix A = matmul.charToMatrix(dataA)
+        Matrix B = matmul.charToMatrix(dataB)
+        
+        if (A == null || B == null) {
+            out.println("[@BrowserWorkerWASM] Failed to parse matrices")
+            return null
+        }
+        
+        // Multiply (pure Dana computation)
+        Matrix result = matmul.multiply(A, B)
+        
+        if (result == null) {
+            out.println("[@BrowserWorkerWASM] Multiplication failed")
+            return null
+        }
+        
+        // Convert back to string
+        char resultStr[] = matmul.matrixToChar(result)
+        out.println("[@BrowserWorkerWASM] Result computed successfully")
+        
+        return resultStr
+    }
+}
+
+// Data structure for JSON encoding
+data ResultData {
+    char result[]
+}
+

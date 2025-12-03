@@ -1,0 +1,132 @@
+uses server.WebServer
+uses server.MatmulController
+uses server.Coordinator
+uses server.StaticFileServer
+
+const char debugMSG[] = "[@WebServer]"
+
+component provides server.WebServer requires io.Output out, network.http.HTTPUtil httpUtil, data.IntUtil iu,
+    composition.Adapt adapter, composition.RecursiveLoader loader,
+    monitoring.ResponseTime rt, time.Timer timer,
+    server.MatmulController mc, server.Coordinator coordinator, server.StaticFileServer staticServer {
+    
+    LoadedComponents matmul = loader.load("matmul/Matmul.o")
+    LoadedComponents matmulProxy = loader.load("matmul/Matmul.proxy.o")
+    LoadedComponents matmulController = loader.load("server/MatmulController.o")
+    
+    int lastResponseTime = 0
+    Mutex lock = new Mutex()
+    bool adaptiveMode = false
+
+    void WebServer:initialize(opt int requestedMode) {
+        int mode = WebServer.MODE_LOCAL
+        if(isset requestedMode) mode = requestedMode
+
+        if(mode == WebServer.MODE_PROXY) {
+            configureProxyMode()
+            adaptiveMode = false
+        } else {
+            configureLocalMode()
+            adaptiveMode = (mode == WebServer.MODE_ADAPTIVE)
+        }
+        
+        // Configure static file server
+        staticServer.setBasePath("webserver")
+        
+        out.println("$debugMSG - WebServer initialized (mode: $(iu.makeString(mode)))")
+    }
+
+    void WebServer:adaptRepository(opt bool useProxy) {
+        rt.markStartTime()
+        if(isset useProxy && useProxy) adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmulProxy.mainComponent)
+        else adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmul.mainComponent)
+        rt.markFinishTime()
+        rt.clearTime()
+    }
+
+    char[] WebServer:handleRequest(char httpRequestBuf[]) {
+        HTTPMessage msg = httpUtil.readHTTPRequest(httpRequestBuf)
+        return process(msg)
+    }
+    
+    char[] WebServer:process(HTTPMessage request) {
+        Response res = null
+        
+        // Try coordinator endpoints first
+        res = coordinator.handle(request)
+        if (res != null) {
+            out.println("$debugMSG Handled by Coordinator: $(request.resource)")
+            return sendResponseWithHeaders(request, res)
+        }
+        
+        // Try matmul controller
+        res = mc.handle(request)
+        if (res != null) {
+            out.println("$debugMSG Handled by MatmulController: $(request.resource)")
+            return sendResponseWithHeaders(request, res)
+        }
+        
+        // Try static file server
+        res = staticServer.handle(request)
+        if (res != null) {
+            out.println("$debugMSG Handled by StaticFileServer: $(request.resource)")
+            return sendResponseWithHeaders(request, res)
+        }
+        
+        // Nothing handled it, return 404
+        return sendResponseWithHeaders(request, build404(request))
+    }
+
+    Response build404(HTTPMessage request) {
+        return new Response(
+            404,
+            "Not Found",
+            HTTPUtil.SERVER_NAME,
+            0,
+            request.mimeType,
+            ""
+        )
+    }
+
+    char[] WebServer:sendResponse(HTTPMessage request, Response response) {
+        return httpUtil.buildHTTPResponse(
+            response.code,
+            response.status,
+            response.serverName,
+            response.contentLength,
+            response.contentType,
+            response.body
+        )
+    }
+    
+    char[] sendResponseWithHeaders(HTTPMessage request, Response response) {
+        // Build response with COOP/COEP headers for SharedArrayBuffer support
+        char res[] = "HTTP/1.1 $(iu.makeString(response.code)) $(response.status)\r\n"
+        res = new char[](res, "Server: $(response.serverName)\r\n")
+        res = new char[](res, "Content-Length: $(iu.makeString(response.contentLength))\r\n")
+        res = new char[](res, "Connection: close\r\n")
+        res = new char[](res, "Content-Type: $(response.contentType)\r\n")
+        
+        // Add COOP/COEP headers for SharedArrayBuffer support
+        res = new char[](res, "Cross-Origin-Opener-Policy: same-origin\r\n")
+        res = new char[](res, "Cross-Origin-Embedder-Policy: require-corp\r\n")
+        
+        res = new char[](res, "\r\n")
+        if (response.body != null && response.body.arrayLength > 0) {
+            res = new char[](res, response.body)
+        }
+        return res
+    }
+
+    void configureLocalMode() {
+        out.println("\n$debugMSG - Server is up and running (local)...")
+        matmulController.mainComponent.wire("matmul.Matmul", matmul.mainComponent, "matmul.Matmul")
+    }
+
+    void configureProxyMode() {
+        matmulController.mainComponent.wire("matmul.Matmul", matmulProxy.mainComponent, "matmul.Matmul")
+        adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmulProxy.mainComponent)
+        out.println("\n$debugMSG - Server is up and running (proxy)...")
+    }
+}
+

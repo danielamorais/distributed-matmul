@@ -136,9 +136,9 @@
             })()
         };
     </script>
-    <script src="file_system.js"></script>
-    <script>Module['arguments'] = ['-dh', '.', 'app/main.o'];</script>
-    <script async src="dana.js"></script>
+    <!-- Removed Dana WASM loading - xdana.html is a client that submits tasks via HTTP -->
+    <!-- It doesn't need to run Dana code, only the worker (worker-dana-wasm.html) does -->
+    <!-- Removed: file_system.js and dana.js - not needed for HTTP client -->
 </head>
 <body>
     <div class="container">

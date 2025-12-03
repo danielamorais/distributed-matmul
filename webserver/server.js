@@ -12,9 +12,34 @@ const upstreamList = (process.env.MATMUL_UPSTREAMS || '')
   .filter((url) => url.length > 0);
 let upstreamPointer = 0;
 
+// ============================================================================
+// Coordinator State (In-Memory for PoC)
+// ============================================================================
+let tasks = [];
+let nextTaskId = 1;
+let pendingQueue = [];
+let totalTasks = 0;
+let completedTasks = 0;
+let activeTasks = 0;
+
+function findTask(taskId) {
+  return tasks.find(t => t.id === taskId);
+}
+
+function getNextPendingTask() {
+  if (pendingQueue.length === 0) return null;
+  const taskId = pendingQueue.shift();
+  return findTask(taskId);
+}
+// ============================================================================
+
 function pickUpstream() {
   if (upstreamList.length === 0) {
-    return process.env.MATMUL_FALLBACK || 'http://127.0.0.1:9000/matmul';
+    // Default to remote workers for WASM setup
+    const defaultUpstreams = ['http://localhost:8081/rpc', 'http://localhost:8082/rpc'];
+    const target = defaultUpstreams[upstreamPointer];
+    upstreamPointer = (upstreamPointer + 1) % defaultUpstreams.length;
+    return target;
   }
   const target = upstreamList[upstreamPointer];
   upstreamPointer = (upstreamPointer + 1) % upstreamList.length;
@@ -28,7 +53,7 @@ async function forwardToUpstream(payload) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(30000), // 30 second timeout
+      signal: AbortSignal.timeout(60000), // 60 second timeout (increased for TCP flush delay)
     });
     const contentType = response.headers.get('content-type') || 'application/json';
     const body = await response.text();
@@ -58,6 +83,107 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json({ limit: '2mb' }));
+
+// ============================================================================
+// Coordinator Endpoints (Browser Workers PoC)
+// ============================================================================
+
+// POST /task - Submit new task
+app.post('/task', (req, res) => {
+  const taskData = req.body;
+  const task = {
+    id: nextTaskId++,
+    status: 'pending',
+    data: taskData,
+    result: null,
+    workerId: null,
+    createdAt: new Date(),
+  };
+  
+  tasks.push(task);
+  pendingQueue.push(task.id);
+  totalTasks++;
+  activeTasks++;
+  
+  console.log(`[Coordinator] Task ${task.id} submitted. Queue size: ${pendingQueue.length}`);
+  
+  res.json({ taskId: task.id });
+});
+
+// GET /task/next - Worker requests next task
+app.get('/task/next', (req, res) => {
+  const workerId = req.query.workerId || 'unknown';
+  const task = getNextPendingTask();
+  
+  if (!task) {
+    // No tasks available
+    return res.status(204).send();
+  }
+  
+  // Mark task as processing
+  task.status = 'processing';
+  task.workerId = workerId;
+  task.startedAt = new Date();
+  
+  console.log(`[Coordinator] Task ${task.id} assigned to worker ${workerId}`);
+  
+  res.json({
+    taskId: task.id,
+    data: task.data
+  });
+});
+
+// POST /task/:id/result - Worker submits result
+app.post('/task/:id/result', (req, res) => {
+  const taskId = parseInt(req.params.id);
+  const result = req.body;
+  
+  const task = findTask(taskId);
+  
+  if (!task) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+  
+  task.result = result;
+  task.status = 'completed';
+  task.completedAt = new Date();
+  
+  completedTasks++;
+  activeTasks--;
+  
+  console.log(`[Coordinator] Task ${task.id} completed by worker ${task.workerId}`);
+  
+  res.json({ status: 'success' });
+});
+
+// GET /result/:id - Get task result
+app.get('/result/:id', (req, res) => {
+  const taskId = parseInt(req.params.id);
+  const task = findTask(taskId);
+  
+  if (!task) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+  
+  res.json({
+    taskId: task.id,
+    status: task.status,
+    result: task.result
+  });
+});
+
+// GET /stats - Statistics
+app.get('/stats', (req, res) => {
+  res.json({
+    totalTasks,
+    completedTasks,
+    activeTasks,
+    queueSize: pendingQueue.length,
+    uptime: process.uptime()
+  });
+});
+
+// ============================================================================
 
 // Convert incoming payload to RPC Request format expected by Dana remote servers
 function convertToRPCRequest(payload) {
@@ -126,23 +252,60 @@ function parseRPCResponse(responseBody) {
 
 app.post('/matmul', async (req, res) => {
   try {
-    // Convert incoming payload to RPC Request format
-    const rpcRequest = convertToRPCRequest(req.body);
+    // Submit task to coordinator (for browser WASM workers to pick up)
+    const taskData = req.body;
+    const task = {
+      id: nextTaskId++,
+      status: 'pending',
+      data: taskData,
+      submittedAt: new Date().toISOString()
+    };
     
-    const upstreamResponse = await forwardToUpstream(rpcRequest);
-    res.status(upstreamResponse.status);
-    res.set('Content-Type', upstreamResponse.contentType);
-    res.set('X-Upstream-Used', upstreamResponse.endpoint);
+    tasks.push(task);
+    pendingQueue.push(task.id);
+    totalTasks++;
     
-    // Parse RPC Response to extract the actual matrix result
-    const result = parseRPCResponse(upstreamResponse.body);
-    res.json(result);
+    console.log(`[/matmul] Created task #${task.id}, waiting for worker...`);
+    
+    // Poll for result (wait up to 30 seconds)
+    const maxWaitTime = 30000; // 30 seconds
+    const pollInterval = 100; // 100ms
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < maxWaitTime) {
+      const currentTask = findTask(task.id);
+      
+      if (currentTask.status === 'completed') {
+        console.log(`[/matmul] Task #${task.id} completed by worker!`);
+        completedTasks++;
+        
+        // Parse result if it's a string
+        let result = currentTask.result;
+        if (typeof result === 'string') {
+          try {
+            result = JSON.parse(result);
+          } catch (e) {
+            // Keep as string if not JSON
+          }
+        }
+        
+        return res.json(result);
+      }
+      
+      // Wait before polling again
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
+    
+    // Timeout - no worker picked up the task
+    console.error(`[/matmul] Task #${task.id} timed out (no worker available)`);
+    res.status(504).json({ 
+      error: 'Computation timeout',
+      details: 'No WASM worker picked up the task. Make sure worker-wasm.html is running and "Start Worker" is clicked.'
+    });
   } catch (err) {
-    console.error('Error forwarding /matmul request:', err);
-    const errorMessage = err.message || 'Failed to reach upstream matmul service';
-    res.status(502).json({ 
-      error: errorMessage,
-      hint: 'Make sure a native Dana server is running. Start it with: dana app/main.o 3'
+    console.error('Error in /matmul endpoint:', err);
+    res.status(500).json({ 
+      error: err.message || 'Internal server error'
     });
   }
 });

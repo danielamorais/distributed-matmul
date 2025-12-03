@@ -1,0 +1,6 @@
+// Interface for Browser Worker ProcessLoop
+interface BrowserWorkerLoop extends lang.ProcessLoop {
+    BrowserWorkerLoop()
+}
+
+

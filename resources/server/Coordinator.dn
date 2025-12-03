@@ -1,0 +1,18 @@
+uses server.Server
+uses network.http.HTTPUtil
+
+data Task {
+    int id
+    char status[]
+    char taskData[]
+    char result[]
+    char workerId[]
+    int createdAt
+    int assignedAt
+    int completedAt
+}
+
+interface Coordinator {
+    Response handle(HTTPMessage request)
+}
+
