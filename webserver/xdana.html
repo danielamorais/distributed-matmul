@@ -6,112 +6,10 @@
     <title>Dana Matrix Multiplication - WASM</title>
     <style>
         body {
+            margin: 0;
+            padding: 0;
+            background: #f5f5f5;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-            background: #f5f5f5;
-        }
-        .container {
-            background: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        h1 {
-            color: #333;
-            margin-top: 0;
-        }
-        .matrix-input {
-            display: flex;
-            gap: 30px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }
-        .matrix-group {
-            flex: 1;
-            min-width: 300px;
-        }
-        .matrix-group label {
-            display: block;
-            font-weight: bold;
-            margin-bottom: 10px;
-            color: #555;
-        }
-        textarea {
-            width: 100%;
-            min-height: 150px;
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            padding: 10px;
-            border: 2px solid #ddd;
-            border-radius: 4px;
-            resize: vertical;
-        }
-        textarea:focus {
-            outline: none;
-            border-color: #4CAF50;
-        }
-        button {
-            background: #4CAF50;
-            color: white;
-            border: none;
-            padding: 12px 30px;
-            font-size: 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-right: 10px;
-        }
-        button:hover {
-            background: #45a049;
-        }
-        button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-        .result-section {
-            margin-top: 20px;
-        }
-        .result-matrix {
-            background: #f9f9f9;
-            padding: 15px;
-            border-radius: 4px;
-            border-left: 4px solid #4CAF50;
-            font-family: 'Courier New', monospace;
-            white-space: pre-wrap;
-            word-break: break-all;
-        }
-        .status {
-            margin-top: 10px;
-            padding: 10px;
-            border-radius: 4px;
-            font-size: 14px;
-        }
-        .status.local {
-            background: #e3f2fd;
-            color: #1976d2;
-            border-left: 4px solid #2196F3;
-        }
-        .status.remote {
-            background: #fff3e0;
-            color: #e65100;
-            border-left: 4px solid #ff9800;
-        }
-        .status.error {
-            background: #ffebee;
-            color: #c62828;
-            border-left: 4px solid #f44336;
-        }
-        .example {
-            margin-top: 15px;
-            font-size: 12px;
-            color: #666;
-        }
-        .example code {
-            background: #f5f5f5;
-            padding: 2px 6px;
-            border-radius: 3px;
         }
         .emscripten {
             padding-right: 0;
@@ -120,11 +18,24 @@
             display: block;
         }
         #canvas {
-            display: none; /* Hide canvas if not needed for UI */
+            display: block;
+            margin: 0 auto;
+            width: 800px;
+            height: 600px;
+            border: 1px solid #ccc;
+        }
+        .info {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 14px;
         }
     </style>
+    <!-- Canvas for Dana UI -->
     <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+    
     <script>
+        // Module configuration - MUST be defined before loading file_system.js
         Module = {
             canvas: (() => {
                 var e = document.getElementById("canvas");
@@ -133,167 +44,35 @@
                     e.preventDefault();
                 }), false);
                 return e;
-            })()
+            })(),
+            print: function(text) {
+                console.log('[Dana] ' + text);
+            },
+            printErr: function(text) {
+                console.error('[Dana] ' + text);
+            }
         };
+        
+        // Set Dana arguments to load main.o
+        // Add -sp resources so Dana can find MainAppLoopImpl component
+        Module['arguments'] = ['-dh', '.', '-sp', 'resources', 'app/main.o'];
     </script>
-    <!-- Removed Dana WASM loading - xdana.html is a client that submits tasks via HTTP -->
-    <!-- It doesn't need to run Dana code, only the worker (worker-dana-wasm.html) does -->
-    <!-- Removed: file_system.js and dana.js - not needed for HTTP client -->
+    
+    <!-- Load Dana WASM Runtime -->
+    <script src="file_system_main.js"></script>
+    <script async src="dana.js"></script>
+    
+    <script>
+        console.log('===== Dana WASM Main App =====');
+        console.log('UI will be handled entirely by Dana WASM');
+        console.log('Check console for Dana app output');
+        console.log('============================');
+    </script>
 </head>
 <body>
-    <div class="container">
-        <h1>🧮 Matrix Multiplication Calculator</h1>
-        <p>Enter two matrices in JSON format and see the result. The calculation can run locally (WASM) or be forwarded to a remote server.</p>
-        
-        <div class="matrix-input">
-            <div class="matrix-group">
-                <label for="matrixA">Matrix A (JSON array):</label>
-                <textarea id="matrixA" placeholder='[[1,2],[3,4]]'>[[1,2],[3,4]]</textarea>
-            </div>
-            <div class="matrix-group">
-                <label for="matrixB">Matrix B (JSON array):</label>
-                <textarea id="matrixB" placeholder='[[5,6],[7,8]]'>[[5,6],[7,8]]</textarea>
-            </div>
-        </div>
-        
-        <button id="calculateBtn" onclick="calculateMatrix()">Calculate A × B</button>
-        <button onclick="loadExample()">Load Example</button>
-        
-        <div class="example">
-            <strong>Example format:</strong> <code>[[1,2],[3,4]]</code> represents a 2×2 matrix<br>
-            Both matrices must have compatible dimensions for multiplication.
-        </div>
-        
-        <div class="result-section" id="resultSection" style="display: none;">
-            <h2>Result:</h2>
-            <div class="result-matrix" id="resultMatrix"></div>
-            <div class="status" id="statusInfo"></div>
-        </div>
+    <div class="info">
+        <p>Matrix Multiplication Calculator - Powered by Dana WASM</p>
+        <p>The UI is rendered entirely by Dana's UI framework.</p>
     </div>
-
-    <script>
-        function parseMatrix(input) {
-            try {
-                const parsed = JSON.parse(input);
-                if (!Array.isArray(parsed) || !parsed.every(row => Array.isArray(row))) {
-                    throw new Error('Matrix must be a 2D array');
-                }
-                return parsed;
-            } catch (e) {
-                throw new Error('Invalid JSON format: ' + e.message);
-            }
-        }
-
-        function formatMatrix(matrix) {
-            return JSON.stringify(matrix, null, 2);
-        }
-
-        function showStatus(message, type) {
-            const statusEl = document.getElementById('statusInfo');
-            statusEl.textContent = message;
-            statusEl.className = 'status ' + type;
-        }
-
-        async function calculateMatrix() {
-            const btn = document.getElementById('calculateBtn');
-            const resultSection = document.getElementById('resultSection');
-            const resultMatrix = document.getElementById('resultMatrix');
-            
-            try {
-                // Parse inputs
-                const matrixA = parseMatrix(document.getElementById('matrixA').value);
-                const matrixB = parseMatrix(document.getElementById('matrixB').value);
-                
-                // Validate dimensions
-                if (matrixA[0].length !== matrixB.length) {
-                    throw new Error(`Cannot multiply: Matrix A has ${matrixA[0].length} columns but Matrix B has ${matrixB.length} rows`);
-                }
-                
-                // Disable button
-                btn.disabled = true;
-                resultSection.style.display = 'block';
-                resultMatrix.textContent = 'Calculating...';
-                showStatus('Sending request to server...', 'local');
-                
-                // Make request
-                const startTime = performance.now();
-                const response = await fetch('/matmul', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        A: JSON.stringify(matrixA),
-                        B: JSON.stringify(matrixB)
-                    })
-                });
-                
-                const endTime = performance.now();
-                const duration = (endTime - startTime).toFixed(2);
-                
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`Server error (${response.status}): ${errorText}`);
-                }
-                
-                // Parse response
-                const contentType = response.headers.get('content-type');
-                let result;
-                
-                if (contentType && contentType.includes('application/json')) {
-                    const jsonData = await response.json();
-                    // Response might be in different formats, try to extract the matrix
-                    if (jsonData.body) {
-                        result = JSON.parse(jsonData.body);
-                    } else if (Array.isArray(jsonData)) {
-                        result = jsonData;
-                    } else if (jsonData.result) {
-                        result = jsonData.result;
-                    } else {
-                        result = jsonData;
-                    }
-                } else {
-                    const text = await response.text();
-                    result = JSON.parse(text);
-                }
-                
-                // Display result
-                resultMatrix.textContent = formatMatrix(result);
-                
-                // Determine if local or remote based on response headers or timing
-                // For now, we'll show it as remote since it goes through Express proxy
-                // You can enhance this by checking response headers or WASM module state
-                const upstreamHeader = response.headers.get('x-upstream-used');
-                if (upstreamHeader) {
-                    showStatus(`✅ Calculated remotely via: ${upstreamHeader} (${duration}ms)`, 'remote');
-                } else {
-                    showStatus(`✅ Calculated (${duration}ms) - forwarded to upstream server`, 'remote');
-                }
-                
-            } catch (error) {
-                resultMatrix.textContent = 'Error: ' + error.message;
-                showStatus('❌ ' + error.message, 'error');
-            } finally {
-                btn.disabled = false;
-            }
-        }
-
-        function loadExample() {
-            document.getElementById('matrixA').value = '[[1,2,3],[4,5,6]]';
-            document.getElementById('matrixB').value = '[[7,8],[9,10],[11,12]]';
-        }
-
-        // Allow Enter key to submit (Ctrl+Enter)
-        document.getElementById('matrixA').addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.key === 'Enter') {
-                calculateMatrix();
-            }
-        });
-        document.getElementById('matrixB').addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.key === 'Enter') {
-                calculateMatrix();
-            }
-        });
-    </script>
 </body>
 </html>

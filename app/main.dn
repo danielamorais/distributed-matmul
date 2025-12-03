@@ -1,19 +1,14 @@
-uses server.Server
-
-component provides App requires io.Output out, data.IntUtil iu, System system, server.ServerProcessLoop loop {
+component provides App requires io.Output out, System system, MainAppLoop {
     int App:main(AppParam params[]) {
-        int mode = Server.MODE_LOCAL
-        if(params.arrayLength > 0) {
-            int provided = iu.intFromString(params[0].string)
-            if(provided == Server.MODE_PROXY || provided == Server.MODE_ADAPTIVE || provided == Server.MODE_LOCAL) {
-                mode = provided
-            }
-        }
-
-        loop.configure(mode)
-        system.setProcessLoop(loop)
-        out.println("App running in mode $(iu.makeString(mode)) with ProcessLoop.")
+        out.println("[MainApp] Initializing...")
+        out.println("[MainApp] About to create MainAppLoop instance...")
         
+        // Set ProcessLoop - Dana will automatically resolve MainAppLoopImpl
+        MainAppLoop loop = new MainAppLoop()
+        out.println("[MainApp] MainAppLoop instance created")
+        
+        system.setProcessLoop(loop)
+        out.println("[MainApp] ProcessLoop registered")
         return 0
     }
 }

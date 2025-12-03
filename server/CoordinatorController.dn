@@ -1,9 +1,10 @@
 uses server.Coordinator
 
 const char debugMSG[] = "[@CoordinatorController]"
+const char EMPTY_JSON_STRING[] = "\"\""
 
 component provides server.Coordinator requires io.Output out, data.IntUtil iu,
-    data.StringUtil su, data.json.JSONEncoder je {
+    data.StringUtil su, data.json.JSONEncoder je, data.json.JSONParser jp {
 
     // In-memory task storage (PoC)
     Task tasks[]
@@ -124,7 +125,19 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
             
             if (task != null) {
                 task.status = "completed"
-                task.result = request.postData
+                // Parse JSON to extract result value: {"result":"..."}
+                char resultValue[] = request.postData
+                if (resultValue != null && resultValue.arrayLength > 0) {
+                    JSONElement root = jp.parseDocument(resultValue)
+                    if (root != null) {
+                        JSONElement resultElem = jp.getValue(root, "result")
+                        if (resultElem != null && resultElem.type == JSONElement.TYPE_STRING) {
+                            // Extract just the result value (e.g., "[[19,22],[43,50]]")
+                            resultValue = resultElem.value
+                        }
+                    }
+                }
+                task.result = resultValue
                 timestamp = timestamp + 1
                 task.completedAt = timestamp
                 
@@ -162,7 +175,52 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
             return buildJSONResponse(404, "Not Found", error)
         }
         
-        char response[] = "{\"taskId\":$(iu.makeString(task.id)),\"status\":\"$(task.status)\",\"result\":$(task.result)}"
+        // Build response with proper JSON formatting for result field
+        char resultValue[] = task.result
+        
+        // Extract result value if it's nested in a JSON object
+        if (resultValue != null && resultValue.arrayLength > 0) {
+            // Check if result is already a JSON object (e.g., {"result":"..."})
+            // If so, parse it and extract the inner result value
+            if (su.startsWith(resultValue, "{\"") || su.startsWith(resultValue, "{'")) {
+                JSONElement root = jp.parseDocument(resultValue)
+                if (root != null) {
+                    JSONElement innerResult = jp.getValue(root, "result")
+                    if (innerResult != null && innerResult.type == JSONElement.TYPE_STRING && innerResult.value != null) {
+                        resultValue = innerResult.value
+                    }
+                }
+            }
+        }
+        
+        // Build JSON response manually to ensure proper formatting
+        char taskIdStr[] = iu.makeString(task.id)
+        char statusStr[] = task.status
+        
+        // Build JSON response - use simple string building to avoid interpolation issues
+        // Build the result value part first
+        char resultVal[] = null
+        if (resultValue != null && resultValue.arrayLength > 0) {
+            // Non-empty: "value"
+            resultVal = new char[]("\"", resultValue, "\"")
+        } else {
+            // Empty: "" (two quote characters as a string)
+            // In Dana, to create "\"\"", we need to use character codes or build it carefully
+            // Use a workaround: create string with quote, empty, quote
+            char q1[] = "\""
+            char q2[] = "\""
+            // Concatenate to get "\"\""
+            resultVal = new char[]("\"", "\"")
+        }
+        
+        // Build complete response by concatenating parts
+        char part1[] = "{\"taskId\":"
+        char part2[] = ",\"status\":\""
+        char part3[] = "\",\"result\":"
+        char part4[] = "}"
+        
+        char response[] = new char[](part1, taskIdStr, part2, statusStr, part3, resultVal, part4)
+        
         return buildJSONResponse(200, "OK", response)
     }
     
@@ -212,9 +270,18 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
     
     int extractTaskIdFromPath(char path[]) {
         // Extract ID from /task/123/result
-        String parts[] = su.explode(path, "/")
+        // First, remove query string if present
+        char cleanPath[] = path
+        int qmark = su.find(path, "?", 0)
+        if (qmark != StringUtil.NOT_FOUND) {
+            cleanPath = su.subString(path, 0, qmark)
+        }
+        
+        String parts[] = su.explode(cleanPath, "/")
+        // For /task/123/result, explode gives: ["task", "123", "result"]
+        // So the ID is at index 1, not 2
         if (parts.arrayLength >= 3) {
-            char idStr[] = parts[2].string
+            char idStr[] = parts[1].string
             if (su.isNumeric(idStr)) {
                 return iu.intFromString(idStr)
             }
@@ -224,9 +291,18 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
     
     int extractResultIdFromPath(char path[]) {
         // Extract ID from /result/123
-        String parts[] = su.explode(path, "/")
-        if (parts.arrayLength >= 3) {
-            char idStr[] = parts[2].string
+        // First, remove query string if present
+        char cleanPath[] = path
+        int qmark = su.find(path, "?", 0)
+        if (qmark != StringUtil.NOT_FOUND) {
+            cleanPath = su.subString(path, 0, qmark)
+        }
+        
+        String parts[] = su.explode(cleanPath, "/")
+        // For /result/123, explode gives: ["result", "123"]
+        // So the ID is at index 1, not 2
+        if (parts.arrayLength >= 2) {
+            char idStr[] = parts[1].string
             if (su.isNumeric(idStr)) {
                 return iu.intFromString(idStr)
             }

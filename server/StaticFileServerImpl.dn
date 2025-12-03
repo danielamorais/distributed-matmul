@@ -1,9 +1,10 @@
 uses server.StaticFileServer
+uses network.http.HTTPUtil
 
 const char debugMSG[] = "[@StaticFileServer]"
 
 component provides server.StaticFileServer requires io.Output out, io.FileSystem fileSystem, io.File,
-    data.StringUtil su, data.IntUtil iu {
+    data.StringUtil su, data.IntUtil iu, network.http.HTTPUtil httpUtil {
     
     char basePath[] = "webserver"
     
@@ -67,6 +68,15 @@ component provides server.StaticFileServer requires io.Output out, io.FileSystem
         return buildFileResponse(200, "OK", fileContent, mimeType)
     }
     
+    // Handle request and return HTTP response string with COOP/COEP headers
+    char[] StaticFileServer:handleWithHeaders(HTTPMessage request) {
+        Response res = handle(request)
+        if (res == null) {
+            return null
+        }
+        return buildFileResponseWithHeaders(res)
+    }
+    
     char[] getMIMEType(char filePath[]) {
         if (su.endsWith(filePath, ".html") || su.endsWith(filePath, ".htm")) {
             return "text/html"
@@ -121,6 +131,25 @@ component provides server.StaticFileServer requires io.Output out, io.FileSystem
             mimeType,
             content
         )
+    }
+    
+    // Build HTTP response string with COOP/COEP headers for WASM
+    char[] buildFileResponseWithHeaders(Response response) {
+        char res[] = "HTTP/1.1 $(iu.makeString(response.code)) $(response.status)\r\n"
+        res = new char[](res, "Server: $(response.serverName)\r\n")
+        res = new char[](res, "Content-Length: $(iu.makeString(response.contentLength))\r\n")
+        res = new char[](res, "Connection: close\r\n")
+        res = new char[](res, "Content-Type: $(response.contentType)\r\n")
+        
+        // Add COOP/COEP headers required for WASM Web Workers
+        res = new char[](res, "Cross-Origin-Opener-Policy: same-origin\r\n")
+        res = new char[](res, "Cross-Origin-Embedder-Policy: require-corp\r\n")
+        
+        res = new char[](res, "\r\n")
+        if (response.body != null && response.body.arrayLength > 0) {
+            res = new char[](res, response.body)
+        }
+        return res
     }
     
     Response build404Response() {

@@ -1,6 +1,10 @@
 # Running the Distributed Matrix Multiplication Project in WASM
 
-This guide explains how to compile, package, and run the distributed matrix multiplication application as a WebAssembly (WASM) module that runs in a web browser.
+This guide explains how to compile, package, and run the distributed matrix multiplication application with the current architecture:
+
+- **Main App (WASM)**: `app/main.dn` + `app/MainAppLoopImpl.dn` - Runs in browser, submits tasks, displays results
+- **Server (Native Dana)**: `app/CoordinatorApp.dn` - Runs natively, handles API endpoints and task coordination
+- **Worker (WASM)**: `app/BrowserWorkerWasm.dn` + `app/BrowserWorkerLoopImpl.dn` - Runs in browser, polls for tasks, computes results
 
 ## Prerequisites
 
@@ -30,157 +34,204 @@ Before building the WASM version, ensure you have:
 
 5. **Web Browser**: Modern browser supporting WebAssembly (Chrome, Firefox, Safari, Edge)
 
-## Building for WASM
+## Quick Start
 
-### Step 1: Compile Dana Components to WASM
+### Step 1: Compile and Package Everything
 
-Run the compilation script to build all components for WebAssembly:
+Run the full system test script to compile and package all components:
 
 ```bash
-cd /path/to/distributed-matmul
-./compile-wasm.sh
+./test-full-system.sh
 ```
 
 This script will:
-- Compile all `.dn` files to WebAssembly using `dnc -os ubc -chip 32`
-- Generate `.o` files in the `wasm_output/` directory
-- Skip proxy generator, results, and testing directories
-
-**Output**: All compiled components are placed in `wasm_output/` with their original directory structure preserved.
-
-### Step 2: Package WASM Files for Browser
-
-Run the packaging script to create the browser-compatible file system:
-
-```bash
-./package-wasm.sh
-```
-
-This script will:
-- Use Emscripten's `file_packager` to bundle WASM files
-- Embed all compiled components into `webserver/file_system.js`
-- Include the Dana standard library
-- Create the file system image required by the Dana WASM runtime
+- ✅ Compile coordinator (native Dana) - `app/CoordinatorApp.o`
+- ✅ Compile main app (WASM) - `wasm_output/app/main.o`
+- ✅ Compile worker (WASM) - `wasm_output/app/BrowserWorkerWasm.o`
+- ✅ Package main app (creates `webserver/file_system_main.js`)
+- ✅ Package worker (creates `webserver/file_system_worker.js`)
+- ✅ Set up initial `file_system.js` (main app version)
 
 **Environment Variables**:
-- `DANA_WASM_HOME`: Should point to your Dana installation directory containing `components/`
-- If not set, the script will look for components at the default location
+- `DANA_WASM_DIR`: Should point to your Dana WASM runtime directory (default: `$HOME/Downloads/dana_wasm_32_[272]`)
 
-**Output**:
-- `webserver/dana.wasm` - The main WASM runtime
-- `webserver/dana.js` - JavaScript loader for the WASM runtime
-- `webserver/file_system.js` - File system containing all components
-- `webserver/xdana.html` - Demo HTML page
+### Step 2: Start the System
 
-## Project Structure for WASM
+```bash
+./start-full-system.sh
+```
+
+This will:
+- Start coordinator on port **8080** (API endpoints)
+- Start static file server on port **8081** (HTML/WASM files)
+- Set `file_system.js` to main app version
+
+### Step 3: Open in Browser
+
+**Tab 1: Main App (Submit Tasks)**
+```
+http://localhost:8081/xdana.html
+```
+- Opens Dana UI window
+- Enter matrices and submit tasks
+- Displays results when ready
+
+**Tab 2: Worker (Process Tasks)**
+```bash
+# First, switch to worker version
+./switch-to-worker.sh
+
+# Then open in browser
+http://localhost:8081/worker-dana-wasm.html
+```
+- Opens worker that polls for tasks
+- Processes matrix multiplication
+- Submits results back
+
+**You can open multiple worker tabs** for parallel processing!
+
+### Step 4: Stop the System
+
+```bash
+./stop-full-system.sh
+```
+
+## Manual Building (Alternative)
+
+If you prefer to build components separately:
+
+### Compile Coordinator (Native Dana)
+
+```bash
+dnc app/CoordinatorApp.dn
+dnc server/CoordinatorController.dn
+```
+
+### Compile Main App (WASM)
+
+```bash
+./compile-main-wasm.sh
+```
+
+This compiles:
+- `app/main.dn` → `wasm_output/app/main.o`
+- `app/MainAppLoopImpl.dn` → `wasm_output/app/MainAppLoopImpl.o`
+
+### Compile Worker (WASM)
+
+```bash
+./compile-worker-wasm.sh
+```
+
+This compiles:
+- `app/BrowserWorkerWasm.dn` → `wasm_output/app/BrowserWorkerWasm.o`
+- `app/BrowserWorkerLoopImpl.dn` → `wasm_output/app/BrowserWorkerLoopImpl.o`
+
+### Package WASM Files
+
+**Package Main App:**
+```bash
+./package-main-wasm.sh
+```
+Creates `webserver/file_system_main.js`
+
+**Package Worker:**
+```bash
+./package-worker-wasm.sh
+```
+Creates `webserver/file_system_worker.js`
+
+## Project Structure
 
 ```
 distributed-matmul/
-├── compile-wasm.sh         # Script to compile components to WASM
-├── package-wasm.sh          # Script to package WASM for browser
-├── wasm_output/             # Compiled WASM components (.o files)
-│   ├── App.o               # Main application entry point
-│   ├── matmul/             # Matrix multiplication components
-│   ├── server/             # Server components
-│   ├── network/            # Network utilities
-│   └── monitoring/         # Performance monitoring
-├── webserver/              # Web-ready WASM package
-│   ├── dana.wasm          # Dana WASM runtime
-│   ├── dana.js            # JavaScript loader
-│   ├── file_system.js     # Component file system
-│   ├── xdana.html         # Demo web page
-│   └── ws/                # Web server components
-└── app/                    # Application entry points
-    ├── main.dn            # Native main (for non-WASM)
-    └── RemoteRepo.dn      # Remote worker (native only)
+├── app/                          # Application entry points
+│   ├── main.dn                    # Main app entry (WASM)
+│   ├── MainAppLoopImpl.dn         # Main app ProcessLoop implementation
+│   ├── BrowserWorkerWasm.dn       # Worker entry (WASM)
+│   ├── BrowserWorkerLoopImpl.dn   # Worker ProcessLoop implementation
+│   └── CoordinatorApp.dn           # Coordinator server (Native Dana)
+├── server/                         # Server components
+│   ├── CoordinatorController.dn    # Task coordination logic
+│   └── CoordinatorServer.dn       # HTTP server wrapper
+├── matmul/                         # Matrix multiplication
+│   └── Matmul.dn                  # Core computation component
+├── wasm_output/                    # Compiled WASM components (.o files)
+│   ├── app/
+│   │   ├── main.o                 # Main app compiled
+│   │   ├── MainAppLoopImpl.o
+│   │   ├── BrowserWorkerWasm.o    # Worker compiled
+│   │   └── BrowserWorkerLoopImpl.o
+│   └── matmul/
+│       └── Matmul.o
+├── webserver/                      # Web-ready WASM package
+│   ├── dana.wasm                  # Dana WASM runtime
+│   ├── dana.js                    # JavaScript loader
+│   ├── file_system_main.js        # Main app file system
+│   ├── file_system_worker.js      # Worker file system
+│   ├── file_system.js             # Active version (switched as needed)
+│   ├── xdana.html                 # Main app HTML page
+│   └── worker-dana-wasm.html      # Worker HTML page
+├── test-full-system.sh             # Compile and package everything
+├── start-full-system.sh           # Start coordinator + static server
+├── stop-full-system.sh            # Stop all services
+├── switch-to-main.sh              # Switch to main app file system
+└── switch-to-worker.sh            # Switch to worker file system
 ```
 
-## Running the WASM Application
-
-### Method 1: Using Dana's Web Server
-
-Dana includes a simple web server for testing WASM applications:
-
-```bash
-# Compile the web server if needed
-dnc ws
-
-# Run the web server
-dana ws.core
-```
-
-The server will start on `http://localhost:8080`
-
-Open your browser and navigate to:
-```
-http://localhost:8080/xdana.html
-```
-
-### Method 2: Using Your Own Web Server
-
-You can use any web server to host the WASM files:
-
-```bash
-# Using Python's simple HTTP server
-cd webserver
-python3 -m http.server 8000
-```
-
-Then open:
-```
-http://localhost:8000/xdana.html
-```
-
-### Method 3: Using Node.js
-
-```bash
-# Install a simple HTTP server
-npm install -g http-server
-
-# Run it
-cd webserver
-http-server -p 8080
-```
-
-Then open:
-```
-http://localhost:8080/xdana.html
-```
-
-## Architecture
-
-### WASM Module Flow
+## Architecture Overview
 
 ```
-Browser → Web Server → dana.wasm (WASM Module)
-                           ↓
-                    ProcessLoop (Non-blocking)
-                           ↓
-              ┌────────────┴────────────┐
-              ↓                         ↓
-      Local Computation         HTTP RPC to Workers
-     (matmul/Matmul.dn)    (matmul/Matmul.proxy.dn)
+┌─────────────────┐
+│   Main App      │  (WASM in browser)
+│  (xdana.html)   │
+└────────┬────────┘
+         │ HTTP POST /task
+         │ HTTP GET /result/:id
+         ▼
+┌─────────────────┐
+│   Coordinator   │  (Native Dana on port 8080)
+│   (API Server)  │
+└────────┬────────┘
+         │ HTTP GET /task/next
+         │ HTTP POST /task/:id/result
+         ▲
+┌─────────────────┐
+│     Worker      │  (WASM in browser)
+│ (worker-dana-   │
+│   wasm.html)    │
+└─────────────────┘
+
+Static Files: Port 8081 (HTML, WASM, file_system.js)
 ```
 
-### Key Components
+### Component Details
 
-1. **Main Application** (`app/main.dn`)
+1. **Main App (WASM)**: `app/main.dn` + `app/MainAppLoopImpl.dn`
    - Entry point for the WASM module
    - Sets up `ProcessLoop` for non-blocking operation
    - Returns immediately from `main()` to allow browser responsiveness
+   - Submits tasks via HTTP POST to coordinator
+   - Polls for results via HTTP GET
 
-2. **Server** (`server/Server.dn`)
-   - Handles HTTP requests (not TCP sockets)
-   - Manages runtime adaptation between local and distributed modes
-   - Uses non-blocking ProcessLoop pattern
+2. **Coordinator (Native Dana)**: `app/CoordinatorApp.dn`
+   - Runs as native Dana process (not WASM)
+   - Handles HTTP requests via TCP sockets
+   - Manages task queue and coordination
+   - Provides REST API endpoints
 
-3. **Matrix Multiplication**
-   - `matmul/Matmul.dn` - Local computation
-   - `matmul/Matmul.proxy.dn` - Distributed computation via HTTP
+3. **Worker (WASM)**: `app/BrowserWorkerWasm.dn` + `app/BrowserWorkerLoopImpl.dn`
+   - Runs in browser as WASM
+   - Uses `ProcessLoop` pattern for non-blocking operation
+   - Polls coordinator for tasks
+   - Computes matrix multiplication using `matmul.Matmul`
+   - Submits results back to coordinator
 
-4. **Network Layer**
-   - Uses `net.http.HTTPRequest` for remote communication
-   - HTTP-based RPC for distributed computation
+4. **Matrix Multiplication**: `matmul/Matmul.dn`
+   - Pure Dana computation component
+   - Used by workers to perform calculations
+   - No network dependencies
+
 
 ## Limitations in WASM
 
@@ -249,27 +300,69 @@ source emsdk_env.sh
 
 ## Testing the Application
 
-### Manual Testing
+### Verify System is Running
 
-1. Open browser to `http://localhost:8080/xdana.html`
-2. Open browser console (F12) to see output
-3. The WASM module should load and start the ProcessLoop
-4. Check for any error messages
+1. **Check Coordinator:**
+   ```bash
+   curl http://localhost:8080/health
+   ```
+   Should return: `{"status": "ok"}`
 
-### Loading Test
+2. **Check Static Server:**
+   ```bash
+   curl http://localhost:8081/xdana.html
+   ```
+   Should return HTML content
+
+### Test End-to-End Flow
+
+1. **Open Main App:**
+   - Navigate to `http://localhost:8081/xdana.html`
+   - Open browser console (F12)
+   - Look for: `[@MainAppWASM] Initializing MainAppLoop...`
+
+2. **Open Worker:**
+   - Run `./switch-to-worker.sh` (if not already done)
+   - Navigate to `http://localhost:8081/worker-dana-wasm.html`
+   - Open browser console (F12)
+   - Look for: `[@BrowserWorkerWASM] Worker ID: worker-wasm-0`
+
+3. **Submit Task:**
+   - In Main App: Enter matrices (e.g., `[[1,2],[3,4]]` and `[[5,6],[7,8]]`)
+   - Click "Submit"
+   - Main App will submit task and start polling for result
+
+4. **Process Task:**
+   - Worker will poll coordinator and receive task
+   - Worker will compute result
+   - Worker will submit result back to coordinator
+
+5. **Receive Result:**
+   - Main App will receive result and display it
+
+### Check Logs
 
 ```bash
-# Test if the module loads correctly
-curl http://localhost:8080/xdana.html
+# Coordinator logs
+tail -f coordinator.log
+
+# Static server logs
+tail -f static-server.log
 ```
 
-### Network Request Test
+### Test API Endpoints
 
 ```bash
-# Test if HTTP requests work
-curl -X POST http://localhost:8080/api/matmul \
+# Submit a task
+curl -X POST http://localhost:8080/task \
   -H "Content-Type: application/json" \
-  -d '{"matrixA": [[1,2],[3,4]], "matrixB": [[5,6],[7,8]]}'
+  -d '{"matrixA": "[[1,2],[3,4]]", "matrixB": "[[5,6],[7,8]]"}'
+
+# Check stats
+curl http://localhost:8080/stats
+
+# Get next task (from worker perspective)
+curl "http://localhost:8080/task/next?workerId=test-worker"
 ```
 
 ## Development Tips
@@ -277,12 +370,27 @@ curl -X POST http://localhost:8080/api/matmul \
 ### Rebuilding After Changes
 
 ```bash
-# Clean and rebuild
+# Clean and rebuild everything
 rm -rf wasm_output/*
-./compile-wasm.sh
-./package-wasm.sh
+./test-full-system.sh
 
-# Restart web server
+# Or rebuild specific components:
+# Main app only
+./compile-main-wasm.sh
+./package-main-wasm.sh
+
+# Worker only
+./compile-worker-wasm.sh
+./package-worker-wasm.sh
+
+# Coordinator only
+dnc app/CoordinatorApp.dn
+dnc server/CoordinatorController.dn
+
+# Restart system
+./stop-full-system.sh
+./start-full-system.sh
+
 # Refresh browser (hard refresh: Ctrl+Shift+R)
 ```
 
@@ -295,30 +403,101 @@ rm -rf wasm_output/*
 ### Adding New Components
 
 1. Create `.dn` file in appropriate directory
-2. Run `./compile-wasm.sh` (automatically compiles new files)
-3. Run `./package-wasm.sh` (includes new components)
-4. Refresh browser
+2. Run `./test-full-system.sh` (compiles and packages everything)
+3. Or run specific compile/package scripts for the component
+4. Restart system and refresh browser
 
-## Remote Workers
+## API Endpoints
 
-**Important**: Remote workers (`app/RemoteRepo.dn`) remain as native Dana applications and are NOT compiled to WASM.
+The coordinator (native Dana server) provides these endpoints:
 
-- They run in separate processes/containers
-- Communication with WASM module is via HTTP
-- Use Docker or Kubernetes to deploy remote workers
-- See main `README.md` for deployment instructions
+- `POST /task` - Submit new task (from Main App)
+  - Body: `{"matrixA": "[[1,2],[3,4]]", "matrixB": "[[5,6],[7,8]]"}`
+  - Response: `{"taskId": 1}`
+
+- `GET /task/next?workerId=X` - Get next task (from Worker)
+  - Response: `{"taskId": 1, "dataA": "[[1,2],[3,4]]", "dataB": "[[5,6],[7,8]]"}` or `204 No Content`
+
+- `POST /task/:id/result` - Submit result (from Worker)
+  - Body: `{"result": "[[19,22],[43,50]]"}`
+  - Response: `{"status": "ok"}`
+
+- `GET /result/:id` - Get result (from Main App)
+  - Response: `{"taskId": 1, "status": "completed", "result": "[[19,22],[43,50]]"}`
+
+- `GET /stats` - View statistics
+  - Response: `{"pending": 0, "processing": 1, "completed": 5}`
+
+- `GET /health` - Health check
+  - Response: `{"status": "ok"}`
+
+All endpoints include CORS headers for browser access.
 
 ## Next Steps
 
-1. **Build**: Run `./compile-wasm.sh` and `./package-wasm.sh`
-2. **Run**: Start a web server and open `xdana.html` in browser
-3. **Test**: Use browser console to verify WASM module loads
-4. **Deploy**: Package `webserver/` directory for production deployment
+1. **Build**: Run `./test-full-system.sh` to compile and package everything
+2. **Run**: Run `./start-full-system.sh` to start coordinator and static server
+3. **Test**: Open main app and worker in browser tabs
+4. **Monitor**: Check logs and browser console for debugging
+5. **Deploy**: Package `webserver/` directory for production deployment
+
+## Troubleshooting
+
+### Port Already in Use
+
+If port 8080 or 8081 is already in use:
+
+```bash
+# Find process using port
+lsof -i :8080
+lsof -i :8081
+
+# Kill process (if needed)
+kill <PID>
+
+# Or use different ports
+./start-full-system.sh 8082 8083
+```
+
+### Coordinator Not Starting
+
+Check logs:
+```bash
+cat coordinator.log
+```
+
+Common issues:
+- Missing compiled files: Run `./test-full-system.sh` again
+- Port conflict: Use different port
+- Permission issues: Check file permissions
+
+### WASM Not Loading
+
+1. Check browser console for errors
+2. Verify `file_system.js` is correct version:
+   ```bash
+   ls -lh webserver/file_system*.js
+   ```
+3. Ensure static file server is running on port 8081
+4. Check that `dana.js` and `dana.wasm` are in `webserver/` directory
+5. Make sure you've switched to the correct file system:
+   - Main app: `./switch-to-main.sh`
+   - Worker: `./switch-to-worker.sh`
+
+### Worker Not Receiving Tasks
+
+1. Verify coordinator is running: `curl http://localhost:8080/health`
+2. Check coordinator logs: `tail -f coordinator.log`
+3. Verify worker is polling: Check browser console for worker logs
+4. Check task queue: `curl http://localhost:8080/stats`
+5. Ensure main app has submitted a task first
 
 ## Resources
 
-- [WASM Migration Summary](WASM_MIGRATION_SUMMARY.md)
-- [WASM Implementation Guide](docs/WASM_IMPLEMENTATION_GUIDE.md)
+- [Full System Test Guide](FULL_SYSTEM_TEST_README.md) - Complete testing instructions
+- [Quick Start WASM](QUICK_START_WASM.md) - Quick start guide
+- [Running Main and Workers WASM](RUNNING_MAIN_AND_WORKERS_WASM.md) - Detailed setup
+- [Architecture Documentation](ARQUITETURA_SISTEMA_COMPLETO.md) - Complete architecture (Portuguese)
 - [Dana Language Documentation](.cursor/rules/)
 - [Emscripten Documentation](https://emscripten.org/docs/)
 - [Main Project README](README.md)

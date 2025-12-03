@@ -4,6 +4,8 @@ uses network.http.HTTPUtil
 interface StaticFileServer {
     Response handle(HTTPMessage request)
     void setBasePath(char path[])
+    char[] handleWithHeaders(HTTPMessage request)
 }
+
 
 

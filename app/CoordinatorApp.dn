@@ -1,0 +1,201 @@
+uses server.Coordinator
+uses network.http.HTTPUtil
+uses server.CoordinatorServer
+uses server.StaticFileServer
+
+component provides App requires data.IntUtil iu, io.Output out,
+    network.http.HTTPUtil httpUtil, server.CoordinatorServer coordinatorServer,
+    net.TCPServerSocket, net.TCPSocket, composition.RecursiveLoader loader {
+    
+    const char debugMSG[] = "[@CoordinatorApp]"
+    const int DEFAULT_PORT = 8080
+    Coordinator coordinator
+    StaticFileServer staticServer
+    
+    int App:main(AppParam params[]) {
+        // Load CoordinatorController explicitly using RecursiveLoader
+        out.println("$debugMSG - Loading CoordinatorController...")
+        LoadedComponents coordinatorComp = loader.load("server/CoordinatorController.o")
+        
+        if (coordinatorComp == null || coordinatorComp.mainComponent == null) {
+            out.println("$debugMSG - Error: Failed to load CoordinatorController")
+            return 1
+        }
+        
+        coordinator = new Coordinator() from coordinatorComp.mainComponent
+        
+        if (coordinator == null) {
+            out.println("$debugMSG - Error: Failed to instantiate Coordinator")
+            return 1
+        }
+        
+        out.println("$debugMSG - CoordinatorController loaded successfully")
+        
+        // Load StaticFileServer for serving HTML/WASM files
+        out.println("$debugMSG - Loading StaticFileServer...")
+        LoadedComponents staticServerComp = loader.load("server/StaticFileServerImpl.o")
+        
+        if (staticServerComp != null && staticServerComp.mainComponent != null) {
+            staticServer = new StaticFileServer() from staticServerComp.mainComponent
+            staticServer.setBasePath("webserver")
+            out.println("$debugMSG - StaticFileServer loaded successfully")
+        } else {
+            out.println("$debugMSG - Warning: StaticFileServer not available (static files will not be served)")
+        }
+        
+        // Accept port as command-line argument (default 8080)
+        int port = DEFAULT_PORT
+        
+        if (params.arrayLength > 0) {
+            port = iu.intFromString(params[0].string)
+        }
+        
+        out.println("")
+        out.println("========================================")
+        out.println("  Dana Coordinator Server")
+        out.println("========================================")
+        out.println("Coordinator running at http://localhost:$(iu.makeString(port))")
+        out.println("")
+        out.println("Endpoints:")
+        out.println("  POST /task           - Submit new task")
+        out.println("  GET  /task/next      - Worker requests next task")
+        out.println("  POST /task/:id/result - Worker submits result")
+        out.println("  GET  /result/:id     - Get task result")
+        out.println("  GET  /stats          - View statistics")
+        out.println("  GET  /health         - Health check")
+        out.println("  GET  /*              - Static files (HTML, WASM, JS)")
+        out.println("========================================")
+        out.println("")
+        
+        // Bind to TCP port
+        TCPServerSocket host = new TCPServerSocket()
+        if (!host.bind(TCPServerSocket.ANY_ADDRESS, port)) {
+            out.println("$debugMSG - Error: failed to bind to port $(iu.makeString(port))")
+            return 1
+        }
+        
+        out.println("$debugMSG - HTTP server listening on port $(iu.makeString(port))")
+        out.println("$debugMSG - Waiting for connections...")
+        out.println("")
+        
+        // Main request loop
+        while (true) {
+            TCPSocket client = new TCPSocket()
+            if (client.accept(host)) {
+                asynch::handleHTTPRequest(client)
+            }
+        }
+        
+        return 0
+    }
+    
+    void handleHTTPRequest(TCPSocket client) {
+        // Read request from socket
+        char request[] = client.recv(8192)
+        
+        if (request == null || request.arrayLength == 0) {
+            out.println("$debugMSG - Warning: received empty request")
+            client.disconnect()
+            return
+        }
+        
+        // Parse HTTP request
+        HTTPMessage httpMsg = httpUtil.readHTTPRequest(request)
+        
+        if (httpMsg == null) {
+            out.println("$debugMSG - Error: Failed to parse HTTP request")
+            client.disconnect()
+            return
+        }
+        
+        // Debug: log request details
+        out.println("$debugMSG - Request: $(httpMsg.command) $(httpMsg.resource) $(httpMsg.version)")
+        
+        // Process through coordinator server (with static file server if available)
+        char response[] = coordinatorServer.handleRequest(httpMsg, coordinator, httpUtil, staticServer)
+        
+        if (response == null || response.arrayLength == 0) {
+            out.println("$debugMSG - Warning: server returned empty response")
+            client.disconnect()
+            return
+        }
+        
+        out.println("$debugMSG - Sending response ($(iu.makeString(response.arrayLength)) bytes)")
+        
+        // Send response back (char[] should work with TCPSocket.send() in Dana)
+        // Note: TCPSocket.send() expects byte[], but char[] is compatible (both are 1-byte types)
+        byte responseBytes[] = new byte[response.arrayLength]
+        for (int i = 0; i < response.arrayLength; i++) {
+            responseBytes[i] = response[i]
+        }
+        int sent = client.send(responseBytes)
+        out.println("$debugMSG - Sent $(iu.makeString(sent)) bytes (expected $(iu.makeString(responseBytes.arrayLength)))")
+        
+        // Verify all data was sent
+        if (sent < responseBytes.arrayLength) {
+            out.println("$debugMSG - Warning: Only $(iu.makeString(sent)) of $(iu.makeString(responseBytes.arrayLength)) bytes were sent")
+        }
+        
+        // Ensure all data is flushed before closing connection
+        flushSocket(client)
+        
+        client.disconnect()
+        out.println("$debugMSG - Connection closed")
+    }
+    
+    void flushSocket(TCPSocket client) {
+        out.println("$debugMSG - flushSocket() called")
+        
+        // Verify socket is still connected before attempting to flush
+        if (!client.connected()) {
+            out.println("$debugMSG - Warning: Socket not connected, skipping flush")
+            return
+        }
+        
+        out.println("$debugMSG - Socket is connected, checking for unsent bytes...")
+        
+        // Check if there's unsent data in Dana's internal buffer
+        int unsentBytes = client.getBufferUnsent()
+        out.println("$debugMSG - Unsent bytes in buffer: $(iu.makeString(unsentBytes))")
+        
+        if (unsentBytes > 0) {
+            out.println("$debugMSG - Flushing $(iu.makeString(unsentBytes)) unsent bytes from buffer")
+            int flushedBytes = client.sendBuffer()
+            out.println("$debugMSG - Flushed $(iu.makeString(flushedBytes)) bytes")
+            
+            // Retry flushing if there's still data
+            int retries = 0
+            const int MAX_FLUSH_RETRIES = 10
+            while (client.connected() && client.getBufferUnsent() > 0 && retries < MAX_FLUSH_RETRIES) {
+                flushedBytes = client.sendBuffer()
+                retries = retries + 1
+                // Small delay to allow OS to process the send
+                int dummy = 0
+                for (int delay = 0; delay < 100000; delay++) {
+                    dummy = dummy + 1
+                }
+            }
+            
+            if (client.getBufferUnsent() > 0) {
+                out.println("$debugMSG - Warning: $(iu.makeString(client.getBufferUnsent())) bytes still in buffer after flush")
+            }
+        } else {
+            out.println("$debugMSG - No unsent bytes in Dana buffer (socket may be in blocking mode)")
+        }
+        
+        // Critical: Delay to ensure OS-level TCP send buffers are flushed
+        // In blocking mode, send() returns after writing to OS buffer, but the OS
+        // may not have actually transmitted the data yet. disconnect() closes the
+        // socket immediately, which can cause the OS to drop buffered data.
+        // This delay gives the OS time to actually transmit the data over the network.
+        // Note: This is a workaround for Dana's TCP implementation limitation.
+        out.println("$debugMSG - Waiting for OS-level TCP buffer flush...")
+        int dummy = 0
+        // Increased delay to 5 seconds (5000000 iterations) to allow OS to flush buffers
+        for (int delay = 0; delay < 5000000; delay++) {
+            dummy = dummy + 1
+        }
+        out.println("$debugMSG - Flush delay complete")
+    }
+}
+

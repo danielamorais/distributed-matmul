@@ -1,0 +1,130 @@
+uses server.Coordinator
+uses network.http.HTTPUtil
+uses server.CoordinatorServer
+uses server.Server
+uses server.StaticFileServer
+
+const char debugMSG[] = "[@CoordinatorServer]"
+
+component provides server.CoordinatorServer requires io.Output out, data.IntUtil iu,
+    data.StringUtil su {
+    
+    // Handle HTTP request and route to coordinator or static file server
+    char[] CoordinatorServer:handleRequest(HTTPMessage request, Coordinator coordinator,
+            HTTPUtil httpUtil, opt StaticFileServer staticServer) {
+        
+        // Handle OPTIONS (CORS preflight)
+        if (request.command == "OPTIONS") {
+            return buildCORSResponse(httpUtil)
+        }
+        
+        // Handle health check
+        if (request.resource == "/health" && request.command == "GET") {
+            return buildHealthResponse(httpUtil)
+        }
+        
+        // Try static file server first (if available)
+        if (isset staticServer && staticServer != null) {
+            char staticResponse[] = staticServer.handleWithHeaders(request)
+            if (staticResponse != null && staticResponse.arrayLength > 0) {
+                return staticResponse
+            }
+        }
+        
+        // Check if coordinator is initialized
+        if (coordinator == null) {
+            out.println("$debugMSG - Error: Coordinator not initialized")
+            char body[] = "{\"error\":\"Coordinator not initialized\"}"
+            char serverName[] = "Dana Coordinator"
+            Response res = new Response(
+                500,
+                "Internal Server Error",
+                serverName,
+                body.arrayLength,
+                "application/json",
+                body
+            )
+            return buildResponseWithCORS(res, httpUtil)
+        }
+        
+        // Route to coordinator
+        Response res = coordinator.handle(request)
+        
+        if (res == null) {
+            // 404 Not Found
+            return build404Response(request, httpUtil)
+        }
+        
+        // Build HTTP response with CORS headers
+        return buildResponseWithCORS(res, httpUtil)
+    }
+    
+    // Build response with CORS headers
+    char[] buildResponseWithCORS(Response response, HTTPUtil httpUtil) {
+        char res[] = "HTTP/1.1 $(iu.makeString(response.code)) $(response.status)\r\n"
+        res = new char[](res, "Server: $(response.serverName)\r\n")
+        res = new char[](res, "Content-Length: $(iu.makeString(response.contentLength))\r\n")
+        res = new char[](res, "Connection: close\r\n")
+        res = new char[](res, "Content-Type: $(response.contentType)\r\n")
+        
+        // Add CORS headers for browser clients
+        res = new char[](res, "Cross-Origin-Opener-Policy: same-origin\r\n")
+        res = new char[](res, "Cross-Origin-Embedder-Policy: require-corp\r\n")
+        res = new char[](res, "Access-Control-Allow-Origin: *\r\n")
+        res = new char[](res, "Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS\r\n")
+        res = new char[](res, "Access-Control-Allow-Headers: Content-Type\r\n")
+        
+        res = new char[](res, "\r\n")
+        if (response.body != null && response.body.arrayLength > 0) {
+            res = new char[](res, response.body)
+        }
+        return res
+    }
+    
+    // Build CORS preflight response
+    char[] buildCORSResponse(HTTPUtil httpUtil) {
+        char serverName[] = "Dana Coordinator"
+        char res[] = "HTTP/1.1 200 OK\r\n"
+        res = new char[](res, "Server: $serverName\r\n")
+        res = new char[](res, "Content-Length: 0\r\n")
+        res = new char[](res, "Connection: close\r\n")
+        res = new char[](res, "Cross-Origin-Opener-Policy: same-origin\r\n")
+        res = new char[](res, "Cross-Origin-Embedder-Policy: require-corp\r\n")
+        res = new char[](res, "Access-Control-Allow-Origin: *\r\n")
+        res = new char[](res, "Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS\r\n")
+        res = new char[](res, "Access-Control-Allow-Headers: Content-Type\r\n")
+        res = new char[](res, "\r\n")
+        return res
+    }
+    
+    // Build health check response
+    char[] buildHealthResponse(HTTPUtil httpUtil) {
+        char body[] = "{\"status\":\"ok\",\"service\":\"coordinator\"}"
+        char serverName[] = "Dana Coordinator"
+        Response res = new Response(
+            200,
+            "OK",
+            serverName,
+            body.arrayLength,
+            "application/json",
+            body
+        )
+        return buildResponseWithCORS(res, httpUtil)
+    }
+    
+    // Build 404 response
+    char[] build404Response(HTTPMessage request, HTTPUtil httpUtil) {
+        char body[] = "{\"error\":\"Not Found\"}"
+        char serverName[] = "Dana Coordinator"
+        Response res = new Response(
+            404,
+            "Not Found",
+            serverName,
+            body.arrayLength,
+            "application/json",
+            body
+        )
+        return buildResponseWithCORS(res, httpUtil)
+    }
+}
+
