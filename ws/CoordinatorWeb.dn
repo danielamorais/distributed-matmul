@@ -1,0 +1,345 @@
+uses server.Coordinator
+uses server.StaticFileServer
+uses network.http.HTTPUtil
+uses net.http.Header
+uses server.Server
+
+component provides ws.Web requires io.Output out, data.IntUtil iu,
+    data.StringUtil su, composition.RecursiveLoader loader {
+    
+    const char debugMSG[] = "[@CoordinatorWeb]"
+    Coordinator coord
+    StaticFileServer staticServer
+    
+    void Web:setup() {
+        out.println("$debugMSG - Setting up CoordinatorWeb...")
+        
+        // Load CoordinatorController if not already loaded
+        if (coord == null) {
+            out.println("$debugMSG - Loading CoordinatorController...")
+            LoadedComponents coordinatorComp = loader.load("server/CoordinatorController.o")
+            
+            if (coordinatorComp != null && coordinatorComp.mainComponent != null) {
+                coord = new Coordinator() from coordinatorComp.mainComponent
+                out.println("$debugMSG - CoordinatorController loaded successfully")
+            } else {
+                out.println("$debugMSG - Warning: Failed to load CoordinatorController")
+            }
+        }
+        
+        // Load StaticFileServer if not already loaded
+        if (staticServer != null) {
+            staticServer.setBasePath("webserver")
+            out.println("$debugMSG - StaticFileServer configured")
+        } else {
+            // Try to load it
+            LoadedComponents staticServerComp = loader.load("server/StaticFileServerImpl.o")
+            if (staticServerComp != null && staticServerComp.mainComponent != null) {
+                staticServer = new StaticFileServer() from staticServerComp.mainComponent
+                staticServer.setBasePath("webserver")
+                out.println("$debugMSG - StaticFileServer loaded successfully")
+            } else {
+                out.println("$debugMSG - Warning: StaticFileServer not available")
+            }
+        }
+        
+        out.println("$debugMSG - Setup complete")
+    }
+    
+    bool Web:get(char path[], DocStream stream) {
+        out.println("$debugMSG - GET request for path: $path")
+        Header headers[] = stream.getRequestHeaders()
+        
+        // Handle health check
+        if (path == "/health") {
+            out.println("$debugMSG - Handling health check")
+            sendHealthResponse(stream)
+            return true
+        }
+        
+        // Try static file server first (if available)
+        // Static files are typically served by ws.core automatically from /swc/ path
+        // But we can also try our static file server for other paths
+        if (staticServer != null && !su.startsWith(path, "/task") && 
+            !su.startsWith(path, "/result") && path != "/stats") {
+            HTTPMessage request = buildHTTPMessage("GET", path, headers, null)
+            char staticResponse[] = staticServer.handleWithHeaders(request)
+            if (staticResponse != null && staticResponse.arrayLength > 0) {
+                // Parse and send static file response via DocStream
+                sendStaticFileResponse(stream, staticResponse)
+                return true
+            }
+        }
+        
+        // Route to coordinator
+        if (coord == null) {
+            sendErrorResponse(stream, 500, "Coordinator not initialized")
+            return true
+        }
+        
+        HTTPMessage request = buildHTTPMessage("GET", path, headers, null)
+        Response res = coord.handle(request)
+        
+        if (res == null) {
+            sendErrorResponse(stream, 404, "Not Found")
+            return true
+        }
+        
+        sendCoordinatorResponse(stream, res)
+        return true
+    }
+    
+    bool Web:post(char path[], char contentType[], byte content[], DocStream stream) {
+        Header headers[] = stream.getRequestHeaders()
+        
+        // Convert byte[] to char[] for postData
+        char postData[] = null
+        if (content != null && content.arrayLength > 0) {
+            postData = new char[content.arrayLength]
+            for (int i = 0; i < content.arrayLength; i++) {
+                postData[i] = content[i]
+            }
+        }
+        
+        // Route to coordinator
+        if (coord == null) {
+            sendErrorResponse(stream, 500, "Coordinator not initialized")
+            return true
+        }
+        
+        HTTPMessage request = buildHTTPMessage("POST", path, headers, postData)
+        request.contentType = contentType
+        if (content != null) {
+            request.contentLength = content.arrayLength
+        }
+        
+        Response res = coord.handle(request)
+        
+        if (res == null) {
+            sendErrorResponse(stream, 404, "Not Found")
+            return true
+        }
+        
+        sendCoordinatorResponse(stream, res)
+        return true
+    }
+    
+    // Build HTTPMessage from path and headers
+    HTTPMessage buildHTTPMessage(char command[], char path[], Header headers[], char postData[]) {
+        HTTPMessage msg = new HTTPMessage()
+        msg.command = command
+        msg.resource = path
+        msg.version = "HTTP/1.1"
+        
+        // Extract query string from path
+        String pathParts[] = su.explode(path, "?")
+        if (pathParts.arrayLength > 1) {
+            msg.resource = pathParts[0].string
+            msg.queryString = pathParts[1].string
+        }
+        
+        // Extract content type and length from headers
+        msg.contentType = getHeaderValue(headers, "content-type")
+        char contentLength[] = getHeaderValue(headers, "content-length")
+        if (contentLength != null && contentLength.arrayLength > 0) {
+            if (su.isNumeric(contentLength)) {
+                msg.contentLength = iu.intFromString(contentLength)
+            }
+        }
+        
+        if (postData != null) {
+            msg.postData = postData
+            if (msg.contentLength == 0) {
+                msg.contentLength = postData.arrayLength
+            }
+        }
+        
+        return msg
+    }
+    
+    // Get header value by key (case-insensitive)
+    char[] getHeaderValue(Header headers[], char key[]) {
+        char lowerKey[] = su.lowercase(key)
+        for (int i = 0; i < headers.arrayLength; i++) {
+            if (su.lowercase(headers[i].key) == lowerKey) {
+                return headers[i].value
+            }
+        }
+        return null
+    }
+    
+    // Send coordinator response via DocStream
+    void sendCoordinatorResponse(DocStream stream, Response res) {
+        stream.setStatusCode(res.code, res.status, false)
+        
+        // Build headers with CORS
+        Header responseHeaders[] = new Header[](
+            new Header("Server", res.serverName),
+            new Header("Content-Type", res.contentType),
+            new Header("Connection", "close"),
+            new Header("Cross-Origin-Opener-Policy", "same-origin"),
+            new Header("Cross-Origin-Embedder-Policy", "require-corp"),
+            new Header("Access-Control-Allow-Origin", "*"),
+            new Header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS"),
+            new Header("Access-Control-Allow-Headers", "Content-Type")
+        )
+        stream.setHeaders(responseHeaders)
+        
+        // Write body
+        if (res.body != null && res.body.arrayLength > 0) {
+            stream.write(res.body)
+        }
+        
+        stream.sendResponse()
+    }
+    
+    // Send CORS preflight response
+    void sendCORSResponse(DocStream stream) {
+        stream.setStatusCode(200, "OK", false)
+        Header headers[] = new Header[](
+            new Header("Server", "Dana Coordinator"),
+            new Header("Connection", "close"),
+            new Header("Cross-Origin-Opener-Policy", "same-origin"),
+            new Header("Cross-Origin-Embedder-Policy", "require-corp"),
+            new Header("Access-Control-Allow-Origin", "*"),
+            new Header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS"),
+            new Header("Access-Control-Allow-Headers", "Content-Type")
+        )
+        stream.setHeaders(headers)
+        stream.sendResponse()
+    }
+    
+    // Send health check response
+    void sendHealthResponse(DocStream stream) {
+        char body[] = "{\"status\":\"ok\",\"service\":\"coordinator\"}"
+        Response res = new Response(
+            200,
+            "OK",
+            "Dana Coordinator",
+            body.arrayLength,
+            "application/json",
+            body
+        )
+        sendCoordinatorResponse(stream, res)
+    }
+    
+    // Send error response
+    void sendErrorResponse(DocStream stream, int code, char status[]) {
+        char body[] = "{\"error\":\"$status\"}"
+        Response res = new Response(
+            code,
+            status,
+            "Dana Coordinator",
+            body.arrayLength,
+            "application/json",
+            body
+        )
+        sendCoordinatorResponse(stream, res)
+    }
+    
+    // Send static file response (parse HTTP response and send via DocStream)
+    void sendStaticFileResponse(DocStream stream, char httpResponse[]) {
+        // Parse HTTP response line: "HTTP/1.1 200 OK\r\n"
+        // Extract status code and reason
+        int statusCode = 200
+        char reason[] = "OK"
+        
+        // Find first line
+        int lineEnd = 0
+        for (int i = 0; i < httpResponse.arrayLength - 1; i++) {
+            if (httpResponse[i] == "\r" && httpResponse[i+1] == "\n") {
+                lineEnd = i
+                break
+            }
+        }
+        
+        if (lineEnd > 0) {
+            char firstLine[] = new char[lineEnd]
+            for (int i = 0; i < lineEnd; i++) {
+                firstLine[i] = httpResponse[i]
+            }
+            
+            // Parse "HTTP/1.1 200 OK"
+            String parts[] = su.explode(firstLine, " ")
+            if (parts.arrayLength >= 2) {
+                if (su.isNumeric(parts[1].string)) {
+                    statusCode = iu.intFromString(parts[1].string)
+                }
+                if (parts.arrayLength >= 3) {
+                    reason = parts[2].string
+                }
+            }
+        }
+        
+        // Find body (after \r\n\r\n)
+        int bodyStart = 0
+        for (int i = 0; i < httpResponse.arrayLength - 3; i++) {
+            if (httpResponse[i] == "\r" && httpResponse[i+1] == "\n" &&
+                httpResponse[i+2] == "\r" && httpResponse[i+3] == "\n") {
+                bodyStart = i + 4
+                break
+            }
+        }
+        
+        stream.setStatusCode(statusCode, reason, false)
+        
+        // Extract content type from headers
+        char contentType[] = "text/plain"
+        // Simple header parsing - look for Content-Type
+        for (int i = lineEnd + 2; i < bodyStart - 4 && i < httpResponse.arrayLength - 15; i++) {
+            if (httpResponse[i] == "C" && httpResponse[i+1] == "o" && 
+                httpResponse[i+2] == "n" && httpResponse[i+3] == "t" &&
+                httpResponse[i+4] == "e" && httpResponse[i+5] == "n" &&
+                httpResponse[i+6] == "t" && httpResponse[i+7] == "-" &&
+                httpResponse[i+8] == "T" && httpResponse[i+9] == "y" &&
+                httpResponse[i+10] == "p" && httpResponse[i+11] == "e") {
+                // Found Content-Type header, extract value
+                int colonPos = i + 12
+                while (colonPos < httpResponse.arrayLength && httpResponse[colonPos] != ":") {
+                    colonPos++
+                }
+                if (colonPos < httpResponse.arrayLength) {
+                    int valueStart = colonPos + 1
+                    while (valueStart < httpResponse.arrayLength && 
+                           (httpResponse[valueStart] == " " || httpResponse[valueStart] == "\t")) {
+                        valueStart++
+                    }
+                    int valueEnd = valueStart
+                    while (valueEnd < httpResponse.arrayLength && 
+                           httpResponse[valueEnd] != "\r") {
+                        valueEnd++
+                    }
+                    if (valueEnd > valueStart) {
+                        contentType = new char[valueEnd - valueStart]
+                        for (int j = 0; j < valueEnd - valueStart; j++) {
+                            contentType[j] = httpResponse[valueStart + j]
+                        }
+                    }
+                }
+                break
+            }
+        }
+        
+        Header responseHeaders[] = new Header[](
+            new Header("Server", "Dana Coordinator"),
+            new Header("Content-Type", contentType),
+            new Header("Connection", "close"),
+            new Header("Cross-Origin-Opener-Policy", "same-origin"),
+            new Header("Cross-Origin-Embedder-Policy", "require-corp"),
+            new Header("Access-Control-Allow-Origin", "*")
+        )
+        stream.setHeaders(responseHeaders)
+        
+        // Write body
+        if (bodyStart < httpResponse.arrayLength) {
+            char body[] = new char[httpResponse.arrayLength - bodyStart]
+            for (int i = 0; i < body.arrayLength; i++) {
+                body[i] = httpResponse[bodyStart + i]
+            }
+            stream.write(body)
+        }
+        
+        stream.sendResponse()
+    }
+}
+

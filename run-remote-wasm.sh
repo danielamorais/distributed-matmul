@@ -1,6 +1,11 @@
 #!/bin/bash
 
 # Run RemoteRepo worker for WASM setup
+# 
+# NOTE: This script runs NATIVE Dana workers (not WASM workers).
+#       It compiles and runs RemoteRepo.dn as a native Dana process.
+#       For WASM workers using Node.js runtime, use: node webserver/worker-server.js
+#
 # Usage: ./run-remote-wasm.sh [PORT] [APP_PORT]
 #   PORT: Port for the HTTP server (default: 8081)
 #   APP_PORT: Application port (optional, default: same as PORT)

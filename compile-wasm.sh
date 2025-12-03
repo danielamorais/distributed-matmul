@@ -56,11 +56,20 @@ find . -name "*.dn" -type f \
     base_name=$(basename "$rel_path")
     output_file="$output_dir/$base_name.o"
     
-    echo "Compiling $file -> $output_file"
+    # Determine chip architecture:
+    # - Workers (RemoteRepo.dn) need -chip 64 to run with native runtime (Architecture 8.1)
+    # - Browser components need -chip 32 for browser WASM runtime (Architecture 4.1)
+    CHIP_FLAG="-chip 32"
+    if [[ "$file" == *"RemoteRepo.dn" ]]; then
+        CHIP_FLAG="-chip 64"
+        echo "Compiling worker $file -> $output_file (using -chip 64 for native runtime)"
+    else
+        echo "Compiling $file -> $output_file (using -chip 32 for browser WASM)"
+    fi
     
     # Compile and capture errors directly to error file
     # Redirect stderr to stdout, then filter for error lines and append to error file
-    dnc "$file" -os ubc -chip 32 -o "$output_file" 2>&1 | grep -i "error" >> "$ERROR_FILE" || true
+    dnc "$file" -os ubc $CHIP_FLAG -o "$output_file" 2>&1 | grep -i "error" >> "$ERROR_FILE" || true
 done
 
 # Print all errors at the end
@@ -81,4 +90,12 @@ ls -la wasm_output/
 
 echo ""
 echo "Main application compiled as: wasm_output/App.o"
-echo "You can now use this WASM module in your web application."
+if [ -f "wasm_output/app/RemoteRepo.o" ]; then
+    echo "Worker compiled as: wasm_output/app/RemoteRepo.o"
+    echo "  Run with: ./run-wasm-worker.sh [PORT]"
+fi
+echo ""
+echo "For Browser Workers PoC:"
+echo "  1. Start Node.js server: cd webserver && node server.js"
+echo "  2. Open workers: http://localhost:8080/worker-wasm.html"
+echo "  3. Open main app: http://localhost:8080/xdana.html"

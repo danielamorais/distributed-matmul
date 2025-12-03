@@ -13,23 +13,21 @@ services:
   dana-remote:
     build:
       context: .
-      dockerfile: ./Dockerfile.remote
+      dockerfile: ./Dockerfile.wasm-worker
     ports:
       - 8081:8081
     environment:
       - PORT=8081
-      - APP_PORT=2010
     networks:
       - dana
   dana-remote-2:
     build:
       context: .
-      dockerfile: ./Dockerfile.remote
+      dockerfile: ./Dockerfile.wasm-worker
     ports:
       - 8082:8082
     environment:
       - PORT=8082
-      - APP_PORT=2011
     networks:
       - dana
       - serial

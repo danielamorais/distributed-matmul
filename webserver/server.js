@@ -165,11 +165,25 @@ app.get('/result/:id', (req, res) => {
     return res.status(404).json({ error: 'Task not found' });
   }
   
-  res.json({
-    taskId: task.id,
-    status: task.status,
-    result: task.result
-  });
+  // If task is not completed yet, return 204 (No Content) to indicate "not ready"
+  if (task.status !== 'completed') {
+    return res.status(204).send();
+  }
+  
+  // Task is completed - return just the result matrix
+  // The result might be a string (JSON string) or already parsed
+  let result = task.result;
+  if (typeof result === 'string') {
+    try {
+      // Try to parse if it's a JSON string
+      result = JSON.parse(result);
+    } catch (e) {
+      // If parsing fails, return as string
+    }
+  }
+  
+  // Return the result directly (as JSON array, e.g., [[19,22],[43,50]])
+  res.json(result);
 });
 
 // GET /stats - Statistics
@@ -265,43 +279,11 @@ app.post('/matmul', async (req, res) => {
     pendingQueue.push(task.id);
     totalTasks++;
     
-    console.log(`[/matmul] Created task #${task.id}, waiting for worker...`);
+    console.log(`[/matmul] Created task #${task.id}, returning taskId for client to poll`);
     
-    // Poll for result (wait up to 30 seconds)
-    const maxWaitTime = 30000; // 30 seconds
-    const pollInterval = 100; // 100ms
-    const startTime = Date.now();
-    
-    while (Date.now() - startTime < maxWaitTime) {
-      const currentTask = findTask(task.id);
-      
-      if (currentTask.status === 'completed') {
-        console.log(`[/matmul] Task #${task.id} completed by worker!`);
-        completedTasks++;
-        
-        // Parse result if it's a string
-        let result = currentTask.result;
-        if (typeof result === 'string') {
-          try {
-            result = JSON.parse(result);
-          } catch (e) {
-            // Keep as string if not JSON
-          }
-        }
-        
-        return res.json(result);
-      }
-      
-      // Wait before polling again
-      await new Promise(resolve => setTimeout(resolve, pollInterval));
-    }
-    
-    // Timeout - no worker picked up the task
-    console.error(`[/matmul] Task #${task.id} timed out (no worker available)`);
-    res.status(504).json({ 
-      error: 'Computation timeout',
-      details: 'No WASM worker picked up the task. Make sure worker-wasm.html is running and "Start Worker" is clicked.'
-    });
+    // Return taskId immediately - client will poll /result/:id for the result
+    // This allows the main app to submit and poll asynchronously
+    return res.json({ taskId: task.id });
   } catch (err) {
     console.error('Error in /matmul endpoint:', err);
     res.status(500).json({ 
