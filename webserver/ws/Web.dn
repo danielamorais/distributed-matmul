@@ -1,8 +1,0 @@
-component provides ws.Web {
-	
-   bool Web:get(char path[], DocStream s)
-      {
-      return false
-      }
-	
-   }

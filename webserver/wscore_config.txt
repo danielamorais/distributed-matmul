@@ -1,9 +1,0 @@
-[static]
-/dana.js
-/dana.wasm
-/xdana.html
-/file_system.js
-
-[xheaders]
-Cross-Origin-Embedder-Policy: require-corp
-Cross-Origin-Opener-Policy: same-origin
