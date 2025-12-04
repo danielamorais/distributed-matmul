@@ -1,0 +1,5 @@
+data TaskResultResponse {
+    int taskId
+    char status[]
+    char result[]
+}

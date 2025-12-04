@@ -1,0 +1,5 @@
+data TaskStats {
+    int id
+    char status[]
+    int workerId
+}

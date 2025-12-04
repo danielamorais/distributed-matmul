@@ -1,4 +1,7 @@
 uses server.Coordinator
+uses server.SubmitTaskResponse
+uses server.TaskResultResponse
+uses server.StatsResponse
 
 const char debugMSG[] = "[@CoordinatorController]"
 const char EMPTY_JSON_STRING[] = "\"\""
@@ -61,7 +64,8 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
             out.println("$debugMSG Task $(iu.makeString(task.id)) submitted. Queue size: $(iu.makeString(taskQueue.arrayLength))")
         }
         
-        char response[] = "{\"taskId\":$(iu.makeString(nextTaskId - 1))}"
+        SubmitTaskResponse respData = new SubmitTaskResponse(nextTaskId - 1)
+        char response[] = je.jsonFromData(respData)
         return buildJSONResponse(200, "OK", response)
     }
     
@@ -94,7 +98,12 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
             return buildEmptyResponse(204, "No Content")
         }
         
-        char response[] = "{\"taskId\":$(iu.makeString(task.id)),\"data\":$(task.taskData)}"
+        char dataStr[] = task.taskData
+        JSONElement test = jp.parseDocument(task.taskData)
+        if (test == null) {
+            dataStr = new char[]("\"", task.taskData, "\"")
+        }
+        char response[] = new char[]("{\"taskId\":", iu.intToString(task.id), ",\"data\":", dataStr, "}")
         return buildJSONResponse(200, "OK", response)
     }
     
@@ -138,7 +147,27 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
             return buildJSONResponse(404, "Not Found", error)
         }
         
-        char response[] = "{\"status\":\"success\"}"
+        char resultValue[] = task.result
+        
+        if (resultValue != null && resultValue.arrayLength > 0) {
+            if (su.startsWith(resultValue, "{\"") || su.startsWith(resultValue, "{'")) {
+                JSONElement root = jp.parseDocument(resultValue)
+                if (root != null) {
+                    JSONElement innerResult = jp.getValue(root, "result")
+                    if (innerResult != null && innerResult.type == JSONElement.TYPE_STRING && innerResult.value != null) {
+                        resultValue = innerResult.value
+                    }
+                }
+            }
+        }
+        
+        char resultForJSON[] = resultValue
+        if (resultForJSON == null) {
+            resultForJSON = ""
+        }
+        TaskResultResponse respData = new TaskResultResponse(task.id, task.status, resultForJSON)
+        char response[] = je.jsonFromData(respData)
+        
         return buildJSONResponse(200, "OK", response)
     }
     
@@ -215,7 +244,8 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
             }
         }
         
-        char response[] = "{\"totalTasks\":$(iu.makeString(totalTasks)),\"completedTasks\":$(iu.makeString(completedTasks)),\"activeTasks\":$(iu.makeString(processingTasks)),\"queueSize\":$(iu.makeString(pendingTasks))}"
+        StatsResponse respData = new StatsResponse(totalTasks, completedTasks, processingTasks, pendingTasks)
+        char response[] = je.jsonFromData(respData)
         return buildJSONResponse(200, "OK", response)
     }
     

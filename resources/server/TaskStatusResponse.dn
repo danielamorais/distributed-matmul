@@ -1,0 +1,4 @@
+data TaskStatusResponse {
+    int taskId
+    char status[]
+}

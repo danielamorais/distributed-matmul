@@ -1,0 +1,6 @@
+data StatsResponse {
+    int totalTasks
+    int completedTasks
+    int activeTasks
+    int queueSize
+}
