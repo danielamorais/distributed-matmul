@@ -9,6 +9,7 @@ const char EMPTY_JSON_STRING[] = "\"\""
 component provides server.Coordinator requires io.Output out, data.IntUtil iu,
     data.StringUtil su, data.json.JSONEncoder je, data.json.JSONParser jp {
 
+    Route routes[]
     Task tasks[]
     int taskQueue[]
     int nextTaskId = 1
@@ -16,29 +17,49 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
     Mutex lock = new Mutex()
     const int INVALID_ID = 0
     
+    void initRoutes() {
+        routes = new Route[](
+            new Route("GET", "/task/", "/next", Coordinator.MATCH_STARTS_ENDS, Coordinator.GET_NEXT_TASK),
+            new Route("POST", "/task/", "/result", Coordinator.MATCH_STARTS_CONTAINS, Coordinator.SUBMIT_RESULT),
+            new Route("POST", "/task", null, Coordinator.MATCH_EXACT, Coordinator.SUBMIT_TASK),
+            new Route("GET", "/result/", null, Coordinator.MATCH_STARTS, Coordinator.GET_RESULT),
+            new Route("GET", "/stats", null, Coordinator.MATCH_EXACT, Coordinator.GET_STATS)
+        )
+    }
+    
     Response Coordinator:handle(HTTPMessage request) {
-        if (su.startsWith(request.resource, "/task/") && request.command == "GET") {
-            if (su.endsWith(request.resource, "/next")) {
-                return handleGetNextTask(request)
+        if (routes == null) {
+            initRoutes()
+        }
+        
+        for (int i = 0; i < routes.arrayLength; i++) {
+            Route route = routes[i]
+            if (request.command == route.method) {
+                bool match = false
+                if (route.matchType == Coordinator.MATCH_EXACT) {
+                    if (request.resource == route.path) match = true
+                } else if (route.matchType == Coordinator.MATCH_STARTS) {
+                    if (su.startsWith(request.resource, route.path)) match = true
+                } else if (route.matchType == Coordinator.MATCH_STARTS_ENDS) {
+                    if (su.startsWith(request.resource, route.path) && su.endsWith(request.resource, route.pathExtra)) match = true
+                } else if (route.matchType == Coordinator.MATCH_STARTS_CONTAINS) {
+                    if (su.startsWith(request.resource, route.path) && su.find(request.resource, route.pathExtra, 0) != null) match = true
+                }
+                
+                if (match) {
+                    if (route.handlerId == Coordinator.GET_NEXT_TASK) {
+                        return handleGetNextTask(request)
+                    } else if (route.handlerId == Coordinator.SUBMIT_RESULT) {
+                        return handleSubmitResult(request)
+                    } else if (route.handlerId == Coordinator.SUBMIT_TASK) {
+                        return handleSubmitTask(request)
+                    } else if (route.handlerId == Coordinator.GET_RESULT) {
+                        return handleGetResult(request)
+                    } else if (route.handlerId == Coordinator.GET_STATS) {
+                        return handleGetStats(request)
+                    }
+                }
             }
-        }
-        
-        if (su.startsWith(request.resource, "/task/") && request.command == "POST") {
-            if (su.find(request.resource, "/result", 0) != null) {
-                return handleSubmitResult(request)
-            }
-        }
-        
-        if (request.resource == "/task" && request.command == "POST") {
-            return handleSubmitTask(request)
-        }
-        
-        if (su.startsWith(request.resource, "/result/") && request.command == "GET") {
-            return handleGetResult(request)
-        }
-        
-        if (request.resource == "/stats" && request.command == "GET") {
-            return handleGetStats(request)
         }
         
         return null

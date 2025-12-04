@@ -14,5 +14,24 @@ data Task {
 
 interface Coordinator {
     Response handle(HTTPMessage request)
+    
+    const int MATCH_EXACT = 0
+    const int MATCH_STARTS = 1
+    const int MATCH_STARTS_ENDS = 2
+    const int MATCH_STARTS_CONTAINS = 3
+    
+    const int GET_NEXT_TASK = 1
+    const int SUBMIT_RESULT = 2
+    const int SUBMIT_TASK = 3
+    const int GET_RESULT = 4
+    const int GET_STATS = 5
+}
+
+data Route {
+    char method[]
+    char path[]
+    char pathExtra[]
+    int matchType
+    int handlerId
 }
 
