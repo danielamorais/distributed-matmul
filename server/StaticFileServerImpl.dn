@@ -13,12 +13,10 @@ component provides server.StaticFileServer requires io.Output out, io.FileSystem
     }
     
     Response StaticFileServer:handle(HTTPMessage request) {
-        // Only handle GET requests
         if (request.command != "GET") {
             return null
         }
         
-        // Skip API endpoints
         if (su.startsWith(request.resource, "/task") || 
             su.startsWith(request.resource, "/result") || 
             su.startsWith(request.resource, "/stats") ||
@@ -26,7 +24,6 @@ component provides server.StaticFileServer requires io.Output out, io.FileSystem
             return null
         }
         
-        // Build file path
         char filePath[] = basePath
         if (request.resource == "/" || request.resource == "") {
             filePath = new char[](filePath, "/xdana.html")
@@ -34,7 +31,6 @@ component provides server.StaticFileServer requires io.Output out, io.FileSystem
             filePath = new char[](filePath, request.resource)
         }
         
-        // Check if file exists
         if (!fileSystem.exists(filePath)) {
             out.println("$debugMSG File not found: $filePath")
             return build404Response()
@@ -42,7 +38,6 @@ component provides server.StaticFileServer requires io.Output out, io.FileSystem
         
         FileInfo info = fileSystem.getInfo(filePath)
         if (info.type == FileInfo.TYPE_DIR) {
-            // Try index.html in directory
             char indexPath[] = new char[](filePath, "/index.html")
             if (fileSystem.exists(indexPath)) {
                 filePath = indexPath
@@ -51,24 +46,19 @@ component provides server.StaticFileServer requires io.Output out, io.FileSystem
             }
         }
         
-        // Read file content
         File fd = new File(filePath, File.READ)
         byte content[] = fd.read(fd.getSize())
         fd.close()
         
-        // Convert bytes to chars
         char fileContent[] = bytesToChars(content)
         
-        // Determine MIME type
         char mimeType[] = getMIMEType(filePath)
         
         out.println("$debugMSG Serving file: $filePath ($(iu.makeString(fileContent.arrayLength)) bytes, $mimeType)")
         
-        // Build response with COOP/COEP headers
         return buildFileResponse(200, "OK", fileContent, mimeType)
     }
     
-    // Handle request and return HTTP response string with COOP/COEP headers
     char[] StaticFileServer:handleWithHeaders(HTTPMessage request) {
         Response res = handle(request)
         if (res == null) {
@@ -133,7 +123,6 @@ component provides server.StaticFileServer requires io.Output out, io.FileSystem
         )
     }
     
-    // Build HTTP response string with COOP/COEP headers for WASM
     char[] buildFileResponseWithHeaders(Response response) {
         char res[] = "HTTP/1.1 $(iu.makeString(response.code)) $(response.status)\r\n"
         res = new char[](res, "Server: $(response.serverName)\r\n")
@@ -141,7 +130,6 @@ component provides server.StaticFileServer requires io.Output out, io.FileSystem
         res = new char[](res, "Connection: close\r\n")
         res = new char[](res, "Content-Type: $(response.contentType)\r\n")
         
-        // Add COOP/COEP headers required for WASM Web Workers
         res = new char[](res, "Cross-Origin-Opener-Policy: same-origin\r\n")
         res = new char[](res, "Cross-Origin-Embedder-Policy: require-corp\r\n")
         

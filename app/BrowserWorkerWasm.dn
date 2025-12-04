@@ -1,7 +1,3 @@
-// Browser Worker WASM - Runs entirely within Dana's ProcessLoop
-// Polls coordinator, computes with Dana, submits results
-// This component extends ProcessLoop and runs standalone in the browser
-
 component provides App requires io.Output out, System system, BrowserWorkerLoop {
     
     int App:main(AppParam params[]) {

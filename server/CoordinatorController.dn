@@ -6,25 +6,21 @@ const char EMPTY_JSON_STRING[] = "\"\""
 component provides server.Coordinator requires io.Output out, data.IntUtil iu,
     data.StringUtil su, data.json.JSONEncoder je, data.json.JSONParser jp {
 
-    // In-memory task storage (PoC)
     Task tasks[]
-    int taskQueue[]  // Array of pending task IDs
+    int taskQueue[]
     int nextTaskId = 1
-    int timestamp = 0  // Simple monotonic counter for timestamps
+    int timestamp = 0
     Mutex lock = new Mutex()
     const int INVALID_ID = 0
     
     Response Coordinator:handle(HTTPMessage request) {
-        // Route based on path and method
         if (su.startsWith(request.resource, "/task/") && request.command == "GET") {
-            // Check if it's /task/next
             if (su.endsWith(request.resource, "/next")) {
                 return handleGetNextTask(request)
             }
         }
         
         if (su.startsWith(request.resource, "/task/") && request.command == "POST") {
-            // Check if it's /task/:id/result
             if (su.find(request.resource, "/result", 0) != null) {
                 return handleSubmitResult(request)
             }
@@ -45,7 +41,6 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
         return null
     }
     
-    // POST /task - Submit new task
     Response handleSubmitTask(HTTPMessage request) {
         mutex(lock) {
             Task task = new Task()
@@ -70,7 +65,6 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
         return buildJSONResponse(200, "OK", response)
     }
     
-    // GET /task/next - Worker requests next task
     Response handleGetNextTask(HTTPMessage request) {
         char workerId[] = extractQueryParam(request.queryString, "workerId")
         if (workerId == null || workerId.arrayLength == 0) {
@@ -80,15 +74,12 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
         Task task = null
         mutex(lock) {
             if (taskQueue.arrayLength > 0) {
-                // Get first task from queue
                 int taskId = taskQueue[0]
                 task = findTask(taskId)
                 
                 if (task != null) {
-                    // Remove from queue
                     taskQueue = removeFromQueue(taskQueue, 0)
                     
-                    // Mark as processing
                     task.status = "processing"
                     task.workerId = workerId
                     timestamp = timestamp + 1
@@ -100,18 +91,14 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
         }
         
         if (task == null) {
-            // No tasks available - return 204 No Content
             return buildEmptyResponse(204, "No Content")
         }
         
-        // Return task data
         char response[] = "{\"taskId\":$(iu.makeString(task.id)),\"data\":$(task.taskData)}"
         return buildJSONResponse(200, "OK", response)
     }
     
-    // POST /task/:id/result - Worker submits result
     Response handleSubmitResult(HTTPMessage request) {
-        // Extract task ID from path: /task/123/result
         int taskId = extractTaskIdFromPath(request.resource)
         
         if (taskId == INVALID_ID) {
@@ -155,9 +142,7 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
         return buildJSONResponse(200, "OK", response)
     }
     
-    // GET /result/:id - Get task result
     Response handleGetResult(HTTPMessage request) {
-        // Extract task ID from path: /result/123
         int taskId = extractResultIdFromPath(request.resource)
         
         if (taskId == INVALID_ID) {
@@ -175,13 +160,9 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
             return buildJSONResponse(404, "Not Found", error)
         }
         
-        // Build response with proper JSON formatting for result field
         char resultValue[] = task.result
         
-        // Extract result value if it's nested in a JSON object
         if (resultValue != null && resultValue.arrayLength > 0) {
-            // Check if result is already a JSON object (e.g., {"result":"..."})
-            // If so, parse it and extract the inner result value
             if (su.startsWith(resultValue, "{\"") || su.startsWith(resultValue, "{'")) {
                 JSONElement root = jp.parseDocument(resultValue)
                 if (root != null) {
@@ -193,27 +174,18 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
             }
         }
         
-        // Build JSON response manually to ensure proper formatting
         char taskIdStr[] = iu.makeString(task.id)
         char statusStr[] = task.status
         
-        // Build JSON response - use simple string building to avoid interpolation issues
-        // Build the result value part first
         char resultVal[] = null
         if (resultValue != null && resultValue.arrayLength > 0) {
-            // Non-empty: "value"
             resultVal = new char[]("\"", resultValue, "\"")
         } else {
-            // Empty: "" (two quote characters as a string)
-            // In Dana, to create "\"\"", we need to use character codes or build it carefully
-            // Use a workaround: create string with quote, empty, quote
             char q1[] = "\""
             char q2[] = "\""
-            // Concatenate to get "\"\""
             resultVal = new char[]("\"", "\"")
         }
         
-        // Build complete response by concatenating parts
         char part1[] = "{\"taskId\":"
         char part2[] = ",\"status\":\""
         char part3[] = "\",\"result\":"
@@ -224,7 +196,6 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
         return buildJSONResponse(200, "OK", response)
     }
     
-    // GET /stats - Statistics
     Response handleGetStats(HTTPMessage request) {
         int totalTasks = 0
         int pendingTasks = 0
@@ -248,7 +219,6 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
         return buildJSONResponse(200, "OK", response)
     }
     
-    // Helper functions
     Task findTask(int taskId) {
         for (int i = 0; i < tasks.arrayLength; i++) {
             if (tasks[i].id == taskId) {

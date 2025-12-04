@@ -1,7 +1,3 @@
-// Browser Worker ProcessLoop Implementation
-// Incrementally building up from minimal version
-// Step 3: Added actual HTTP polling with async context
-
 uses net.http.Header
 
 component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu, 
@@ -9,7 +5,7 @@ component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu,
     data.json.JSONEncoder je, matmul.Matmul matmul {
     
     const char COORDINATOR_URL[] = "http://localhost:8080/task/next"
-    const int POLL_INTERVAL_LOOPS = 200 // Approximate loops for 2 seconds
+    const int POLL_INTERVAL_LOOPS = 200
     
     char workerId[] = null
     int loopCount = 0
@@ -18,50 +14,39 @@ component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu,
     const char RESULT_URL_PREFIX[] = "http://localhost:8080/task/"
     const char RESULT_URL_SUFFIX[] = "/result"
     
-    // HTTP request state (for async operations)
     HTTPResponse currentResponse = null
     bool waitingForResponse = false
     int currentTaskId = 0
     char currentResult[] = null
-    int requestType = 0 // 0=none, 1=poll, 2=submit
+    int requestType = 0
     int tasksCompleted = 0
     
     BrowserWorkerLoop:BrowserWorkerLoop() {
-        // Generate worker ID on initialization
         workerId = new char[]("worker-wasm-", iu.makeString(loopCount))
         out.println("[@BrowserWorkerWASM] Worker ID: $(workerId)")
         out.println("[@BrowserWorkerWASM] Will poll: $(COORDINATOR_URL)")
     }
     
-    // Loop implementation - increment counter and poll periodically
     bool BrowserWorkerLoop:loop() {
         loopCount++
         
-        // Check if we're waiting for an HTTP response
         if (waitingForResponse) {
             if (currentResponse != null) {
                 handleResponse()
-                // Only reset if we're not starting a new request
-                // (startSubmitRequest sets waitingForResponse = true and requestType = 2)
                 if (requestType == 0) {
                     waitingForResponse = false
                     currentResponse = null
                 } else {
-                    // We started a new request, clear the old response
-                    // The new request will set currentResponse when it completes
                     currentResponse = null
                 }
             }
-            // Still waiting, return true to continue loop
             return true
         }
         
-        // Log every 100 loops (approximately every second)
         if (loopCount % 100 == 0) {
             out.println("[@BrowserWorkerWASM] Loop count: $(iu.makeString(loopCount))")
         }
         
-        // Time to poll for new task?
         if (loopCount - lastPollLoop >= POLL_INTERVAL_LOOPS) {
             lastPollLoop = loopCount
             startPollRequest()
@@ -71,30 +56,23 @@ component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu,
     }
     
     void startPollRequest() {
-        if (waitingForResponse) return // Already have a request in flight
+        if (waitingForResponse) return
         
         out.println("[@BrowserWorkerWASM] Polling for tasks...")
         
-        // Build poll URL with worker ID
         char pollUrl[] = new char[](COORDINATOR_URL, "?workerId=", workerId)
         
-        // Build headers
         Header headers[] = new Header[](
             new Header("Content-Type", "application/json")
         )
         
-        // Start async request
-        // IMPORTANT: HTTPRequest must be called from async context in WASM
-        requestType = 1 // poll request
+        requestType = 1
         waitingForResponse = true
         
-        // Execute HTTP request in async context
         asynch::executePollRequest(pollUrl, headers)
     }
     
     void executePollRequest(char url[], Header headers[]) {
-        // This runs in async context, allowing HTTP requests in WASM
-        // http.get() must be called from async context, not from ProcessLoop:loop()
         currentResponse = http.get(url, headers, false)
     }
     
@@ -105,7 +83,6 @@ component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu,
         }
         
         if (currentResponse.responseCode == "204") {
-            // No tasks available - this is normal
             return
         }
         
@@ -114,7 +91,6 @@ component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu,
             return
         }
         
-        // Convert byte[] content to char[] for JSON parsing
         if (currentResponse.content == null || currentResponse.content.arrayLength == 0) {
             out.println("[@BrowserWorkerWASM] Empty response body")
             return
@@ -125,14 +101,12 @@ component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu,
             responseBody[i] = currentResponse.content[i]
         }
         
-        // Parse JSON task - server sends {taskId, data: {A, B}}
         JSONElement root = jp.parseDocument(responseBody)
         if (root == null) {
             out.println("[@BrowserWorkerWASM] Failed to parse task response")
             return
         }
         
-        // Extract taskId
         JSONElement taskIdElem = jp.getValue(root, "taskId")
         if (taskIdElem == null || taskIdElem.type != JSONElement.TYPE_NUMBER) {
             out.println("[@BrowserWorkerWASM] Missing or invalid taskId")
@@ -140,14 +114,12 @@ component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu,
         }
         int taskId = iu.intFromString(taskIdElem.value)
         
-        // Extract data object
         JSONElement dataElem = jp.getValue(root, "data")
         if (dataElem == null || dataElem.type != JSONElement.TYPE_OBJECT) {
             out.println("[@BrowserWorkerWASM] Missing or invalid data field")
             return
         }
         
-        // Extract A and B from data object
         JSONElement aElem = jp.getValue(dataElem, "A")
         JSONElement bElem = jp.getValue(dataElem, "B")
         
@@ -164,7 +136,6 @@ component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu,
         out.println("[@BrowserWorkerWASM] Matrix A: $(dataA)")
         out.println("[@BrowserWorkerWASM] Matrix B: $(dataB)")
         
-        // Compute result using matmul component
         char result[] = computeTask(taskId, dataA, dataB)
         
         if (result == null) {
@@ -174,15 +145,12 @@ component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu,
         
         out.println("[@BrowserWorkerWASM] Computation complete: $(result)")
         
-        // Start submit request
         out.println("[@BrowserWorkerWASM] About to submit result for task #$(iu.makeString(taskId))")
         currentTaskId = taskId
         currentResult = result
         
-        // Clear current response and reset waitingForResponse before starting new request
-        // (the submit request will set a new currentResponse when it completes)
         currentResponse = null
-        waitingForResponse = false  // Reset so startSubmitRequest() doesn't return early
+        waitingForResponse = false
         
         out.println("[@BrowserWorkerWASM] Calling startSubmitRequest()...")
         startSubmitRequest(taskId, result)
@@ -191,8 +159,6 @@ component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu,
         } else {
             out.println("[@BrowserWorkerWASM] startSubmitRequest() called, waitingForResponse=false")
         }
-        // Note: waitingForResponse is set to true in startSubmitRequest()
-        // The loop will handle the submit response in the next iteration
     }
     
     void handleResponse() {
@@ -201,15 +167,11 @@ component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu,
         int oldRequestType = requestType
         
         if (requestType == 1) {
-            // Handle poll response
             handlePollResponse()
         } else if (requestType == 2) {
-            // Handle submit response
             handleSubmitResponse()
         }
         
-        // Only reset requestType if we didn't start a new request
-        // (startSubmitRequest sets requestType = 2, so if it's still 2, we started a new request)
         if (requestType == oldRequestType) {
             requestType = 0
         }
@@ -218,35 +180,28 @@ component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu,
     void startSubmitRequest(int taskId, char result[]) {
         if (waitingForResponse) {
             out.println("[@BrowserWorkerWASM] startSubmitRequest() early return: waitingForResponse=true")
-            return // Already have a request in flight
+            return
         }
         
         out.println("[@BrowserWorkerWASM] Submitting result for task #$(iu.makeString(taskId))")
         
-        // Build result URL
         char resultUrl[] = new char[](RESULT_URL_PREFIX, iu.makeString(taskId), RESULT_URL_SUFFIX)
         
-        // Build JSON body - create a data structure for JSON encoding
         ResultData resultData = new ResultData()
         resultData.result = result
         char jsonBody[] = je.jsonFromData(resultData)
         
-        // Build headers
         Header headers[] = new Header[](
             new Header("Content-Type", "application/json")
         )
         
-        // Start async request
-        requestType = 2 // submit request
+        requestType = 2
         waitingForResponse = true
         
-        // Execute HTTP request in async context
         asynch::executeSubmitRequest(resultUrl, headers, jsonBody)
     }
     
     void executeSubmitRequest(char url[], Header headers[], char postData[]) {
-        // This runs in async context, allowing HTTP requests in WASM
-        // http.post() must be called from async context, not from ProcessLoop:loop()
         currentResponse = http.post(url, headers, postData, false)
     }
     
@@ -269,7 +224,6 @@ component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu,
         
         out.println("[@BrowserWorkerWASM] Computing: A=$(dataA), B=$(dataB)")
         
-        // Parse matrices
         Matrix A = matmul.charToMatrix(dataA)
         Matrix B = matmul.charToMatrix(dataB)
         
@@ -278,7 +232,6 @@ component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu,
             return null
         }
         
-        // Multiply (pure Dana computation)
         Matrix result = matmul.multiply(A, B)
         
         if (result == null) {
@@ -286,7 +239,6 @@ component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu,
             return null
         }
         
-        // Convert back to string
         char resultStr[] = matmul.matrixToChar(result)
         out.println("[@BrowserWorkerWASM] Result computed successfully")
         
@@ -294,7 +246,6 @@ component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu,
     }
 }
 
-// Data structure for JSON encoding
 data ResultData {
     char result[]
 }
