@@ -1,3 +1,0 @@
-interface RenderApp extends lang.ProcessLoop {
-	RenderApp()
-	}
