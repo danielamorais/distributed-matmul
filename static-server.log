@@ -1,7 +1,0 @@
-127.0.0.1 - - [02/Dec/2025 23:45:22] "HEAD /xdana.html HTTP/1.1" 200 -
-127.0.0.1 - - [02/Dec/2025 23:46:06] "GET /xdana.html HTTP/1.1" 200 -
-127.0.0.1 - - [02/Dec/2025 23:46:06] "GET /file_system.js HTTP/1.1" 200 -
-127.0.0.1 - - [02/Dec/2025 23:46:06] "GET /dana.js HTTP/1.1" 200 -
-127.0.0.1 - - [02/Dec/2025 23:46:06] code 404, message File not found
-127.0.0.1 - - [02/Dec/2025 23:46:06] "GET /favicon.ico HTTP/1.1" 404 -
-127.0.0.1 - - [02/Dec/2025 23:46:07] "GET /dana.wasm HTTP/1.1" 200 -
