@@ -46,13 +46,15 @@ file_packager "$DANA_WASM_DIR/dana.wasm" \
     --embed wasm_output/app/BrowserWorkerLoop.o@app/BrowserWorkerLoop.o \
     --embed wasm_output/matmul/Matmul.o@matmul/Matmul.o \
     --embed resources/MainAppLoop.dn@resources/MainAppLoop.dn \
-    --embed wasm_output/resources/BrowserWorkerLoop.dn@resources/BrowserWorkerLoop.dn \
+    --embed resources/BrowserWorkerLoop.dn@resources/BrowserWorkerLoop.dn \
     --embed "$DANA_WASM_DIR/components/@components" \
     --js-output=webserver/file_system.js
 
-echo "Copying Dana runtime files to webserver..."
+echo "Copying Dana runtime and HTML files to webserver..."
 cp "$DANA_WASM_DIR/dana.js" webserver/
 cp "$DANA_WASM_DIR/dana.wasm" webserver/
+cp xdana.html webserver/
+cp worker-dana-wasm.html webserver/
 
 echo "✅ All WASM components packaged successfully into file_system.js."
 echo ""
