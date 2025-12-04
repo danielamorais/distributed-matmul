@@ -1,0 +1,23 @@
+const char debugMSG[] = "[@TCPUtil]"
+
+component provides network.tcp.TCPUtil requires io.Output out {
+    TCPServerSocket TCPUtil:initServer(int port) {
+        TCPServerSocket host = new TCPServerSocket()
+        
+        // binding server socket
+		if (!host.bind(TCPServerSocket.ANY_ADDRESS, port)) {
+			out.println("Error: failed to bind master socket")
+			return null
+		}
+
+        out.println("\n$debugMSG - Server is up and running...")
+
+        return host
+    }
+
+    TCPSocket TCPUtil:getConnection(TCPServerSocket host) {
+        TCPSocket client = new TCPSocket()
+        if (client.accept(host)) return client
+        return null
+    }
+}
