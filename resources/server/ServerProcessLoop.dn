@@ -1,0 +1,13 @@
+uses server.Server
+
+interface ServerProcessLoop extends lang.ProcessLoop {
+    void configure(int startMode)
+    void enqueueRequest(char requestBuffer[])
+    bool hasPendingResponse()
+    char[] nextResponse()
+}
+
+
+
+
+

@@ -1,0 +1,46 @@
+uses network.rpc.RPCUtil
+uses net.http.Header
+uses net.http.HTTPRequest
+
+const char debugMSG[] = "[@HTTPRPCUtil]"
+
+component provides network.http.HTTPRPCUtil requires io.Output out, net.http.HTTPRequest httpRequest,
+    data.json.JSONEncoder je, data.json.JSONParser jp, data.IntUtil iu {
+    
+    Response HTTPRPCUtil:makeHTTPRPC(char url[], Request req) {
+        // Serialize Request to JSON body
+        char requestBody[] = je.jsonFromData(req)
+        
+        // Build HTTP headers
+        Header headers[] = new Header[](
+            new Header("Content-Type", "application/json")
+        )
+        
+        // Make HTTP POST request
+        HTTPResponse httpResp = httpRequest.post(url, headers, requestBody, false)
+        
+        // Parse HTTP response
+        if (httpResp.responseCode == "200") {
+            // Convert byte[] content to char[] for JSON parsing
+            char responseContent[] = new char[httpResp.content.arrayLength]
+            for (int i = 0; i < httpResp.content.arrayLength; i++) {
+                responseContent[i] = httpResp.content[i]
+            }
+            
+            // Parse response body back to Response type
+            Response rpcResp = je.jsonToData(responseContent, typeof(Response))
+            return rpcResp
+        } else {
+            // Return error response
+            Metadata errorMeta[] = new Metadata[](new Metadata("status", httpResp.responseCode))
+            return new Response(errorMeta, "")
+        }
+    }
+
+    bool HTTPRPCUtil:isValidResponse(Response res) {
+        if(res == null) return false
+        if(res.meta == null || res.meta.arrayLength == 0) return false
+        return true
+    }
+}
+

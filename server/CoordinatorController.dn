@@ -1,0 +1,372 @@
+uses server.Coordinator
+uses server.SubmitTaskResponse
+uses server.TaskResultResponse
+uses server.StatsResponse
+
+const char debugMSG[] = "[@CoordinatorController]"
+const char EMPTY_JSON_STRING[] = "\"\""
+
+component provides server.Coordinator requires io.Output out, data.IntUtil iu,
+    data.StringUtil su, data.json.JSONEncoder je, data.json.JSONParser jp {
+
+    Route routes[]
+    Task tasks[]
+    int taskQueue[]
+    int nextTaskId = 1
+    int timestamp = 0
+    Mutex lock = new Mutex()
+    const int INVALID_ID = 0
+    
+    void initRoutes() {
+        routes = new Route[](
+            new Route("GET", "/task/", "/next", Coordinator.MATCH_STARTS_ENDS, Coordinator.GET_NEXT_TASK),
+            new Route("POST", "/task/", "/result", Coordinator.MATCH_STARTS_CONTAINS, Coordinator.SUBMIT_RESULT),
+            new Route("POST", "/task", null, Coordinator.MATCH_EXACT, Coordinator.SUBMIT_TASK),
+            new Route("GET", "/result/", null, Coordinator.MATCH_STARTS, Coordinator.GET_RESULT),
+            new Route("GET", "/stats", null, Coordinator.MATCH_EXACT, Coordinator.GET_STATS)
+        )
+    }
+    
+    Response Coordinator:handle(HTTPMessage request) {
+        if (routes == null) {
+            initRoutes()
+        }
+        
+        for (int i = 0; i < routes.arrayLength; i++) {
+            Route route = routes[i]
+            if (request.command == route.method) {
+                bool match = false
+                if (route.matchType == Coordinator.MATCH_EXACT) {
+                    if (request.resource == route.path) match = true
+                } else if (route.matchType == Coordinator.MATCH_STARTS) {
+                    if (su.startsWith(request.resource, route.path)) match = true
+                } else if (route.matchType == Coordinator.MATCH_STARTS_ENDS) {
+                    if (su.startsWith(request.resource, route.path) && su.endsWith(request.resource, route.pathExtra)) match = true
+                } else if (route.matchType == Coordinator.MATCH_STARTS_CONTAINS) {
+                    if (su.startsWith(request.resource, route.path) && su.find(request.resource, route.pathExtra, 0) != null) match = true
+                }
+                
+                if (match) {
+                    if (route.handlerId == Coordinator.GET_NEXT_TASK) {
+                        return handleGetNextTask(request)
+                    } else if (route.handlerId == Coordinator.SUBMIT_RESULT) {
+                        return handleSubmitResult(request)
+                    } else if (route.handlerId == Coordinator.SUBMIT_TASK) {
+                        return handleSubmitTask(request)
+                    } else if (route.handlerId == Coordinator.GET_RESULT) {
+                        return handleGetResult(request)
+                    } else if (route.handlerId == Coordinator.GET_STATS) {
+                        return handleGetStats(request)
+                    }
+                }
+            }
+        }
+        
+        return null
+    }
+    
+    Response handleSubmitTask(HTTPMessage request) {
+        mutex(lock) {
+            Task task = new Task()
+            task.id = nextTaskId
+            nextTaskId++
+            task.status = "pending"
+            task.taskData = request.postData
+            task.result = ""
+            task.workerId = ""
+            timestamp = timestamp + 1
+            task.createdAt = timestamp
+            task.assignedAt = 0
+            task.completedAt = 0
+            
+            tasks = new Task[](tasks, task)
+            taskQueue = new int[](taskQueue, task.id)
+            
+            out.println("$debugMSG Task $(iu.makeString(task.id)) submitted. Queue size: $(iu.makeString(taskQueue.arrayLength))")
+        }
+        
+        SubmitTaskResponse respData = new SubmitTaskResponse(nextTaskId - 1)
+        char response[] = je.jsonFromData(respData)
+        return buildJSONResponse(200, "OK", response)
+    }
+    
+    Response handleGetNextTask(HTTPMessage request) {
+        char workerId[] = extractQueryParam(request.queryString, "workerId")
+        if (workerId == null || workerId.arrayLength == 0) {
+            workerId = "unknown"
+        }
+        
+        Task task = null
+        mutex(lock) {
+            if (taskQueue.arrayLength > 0) {
+                int taskId = taskQueue[0]
+                task = findTask(taskId)
+                
+                if (task != null) {
+                    taskQueue = removeFromQueue(taskQueue, 0)
+                    
+                    task.status = "processing"
+                    task.workerId = workerId
+                    timestamp = timestamp + 1
+                    task.assignedAt = timestamp
+                    
+                    out.println("$debugMSG Task $(iu.makeString(task.id)) assigned to worker $workerId")
+                }
+            }
+        }
+        
+        if (task == null) {
+            return buildEmptyResponse(204, "No Content")
+        }
+        
+        char dataStr[] = task.taskData
+        JSONElement test = jp.parseDocument(task.taskData)
+        if (test == null) {
+            dataStr = new char[]("\"", task.taskData, "\"")
+        }
+        char response[] = new char[]("{\"taskId\":", iu.intToString(task.id), ",\"data\":", dataStr, "}")
+        return buildJSONResponse(200, "OK", response)
+    }
+    
+    Response handleSubmitResult(HTTPMessage request) {
+        int taskId = extractTaskIdFromPath(request.resource)
+        
+        if (taskId == INVALID_ID) {
+            char error[] = "{\"error\":\"Invalid task ID\"}"
+            return buildJSONResponse(400, "Bad Request", error)
+        }
+        
+        Task task = null
+        mutex(lock) {
+            task = findTask(taskId)
+            
+            if (task != null) {
+                task.status = "completed"
+                // Parse JSON to extract result value: {"result":"..."}
+                char resultValue[] = request.postData
+                if (resultValue != null && resultValue.arrayLength > 0) {
+                    JSONElement root = jp.parseDocument(resultValue)
+                    if (root != null) {
+                        JSONElement resultElem = jp.getValue(root, "result")
+                        if (resultElem != null && resultElem.type == JSONElement.TYPE_STRING) {
+                            // Extract just the result value (e.g., "[[19,22],[43,50]]")
+                            resultValue = resultElem.value
+                        }
+                    }
+                }
+                task.result = resultValue
+                timestamp = timestamp + 1
+                task.completedAt = timestamp
+                
+                int duration = task.completedAt - task.assignedAt
+                out.println("$debugMSG Task $(iu.makeString(task.id)) completed by worker $(task.workerId) ($(iu.makeString(duration))ms)")
+            }
+        }
+        
+        if (task == null) {
+            char error[] = "{\"error\":\"Task not found\"}"
+            return buildJSONResponse(404, "Not Found", error)
+        }
+        
+        char resultValue[] = task.result
+        
+        if (resultValue != null && resultValue.arrayLength > 0) {
+            if (su.startsWith(resultValue, "{\"") || su.startsWith(resultValue, "{'")) {
+                JSONElement root = jp.parseDocument(resultValue)
+                if (root != null) {
+                    JSONElement innerResult = jp.getValue(root, "result")
+                    if (innerResult != null && innerResult.type == JSONElement.TYPE_STRING && innerResult.value != null) {
+                        resultValue = innerResult.value
+                    }
+                }
+            }
+        }
+        
+        char resultForJSON[] = resultValue
+        if (resultForJSON == null) {
+            resultForJSON = ""
+        }
+        TaskResultResponse respData = new TaskResultResponse(task.id, task.status, resultForJSON)
+        char response[] = je.jsonFromData(respData)
+        
+        return buildJSONResponse(200, "OK", response)
+    }
+    
+    Response handleGetResult(HTTPMessage request) {
+        int taskId = extractResultIdFromPath(request.resource)
+        
+        if (taskId == INVALID_ID) {
+            char error[] = "{\"error\":\"Invalid task ID\"}"
+            return buildJSONResponse(400, "Bad Request", error)
+        }
+        
+        Task task = null
+        mutex(lock) {
+            task = findTask(taskId)
+        }
+        
+        if (task == null) {
+            char error[] = "{\"error\":\"Task not found\"}"
+            return buildJSONResponse(404, "Not Found", error)
+        }
+        
+        char resultValue[] = task.result
+        
+        if (resultValue != null && resultValue.arrayLength > 0) {
+            if (su.startsWith(resultValue, "{\"") || su.startsWith(resultValue, "{'")) {
+                JSONElement root = jp.parseDocument(resultValue)
+                if (root != null) {
+                    JSONElement innerResult = jp.getValue(root, "result")
+                    if (innerResult != null && innerResult.type == JSONElement.TYPE_STRING && innerResult.value != null) {
+                        resultValue = innerResult.value
+                    }
+                }
+            }
+        }
+        
+        char taskIdStr[] = iu.makeString(task.id)
+        char statusStr[] = task.status
+        
+        char resultVal[] = null
+        if (resultValue != null && resultValue.arrayLength > 0) {
+            resultVal = new char[]("\"", resultValue, "\"")
+        } else {
+            char q1[] = "\""
+            char q2[] = "\""
+            resultVal = new char[]("\"", "\"")
+        }
+        
+        char part1[] = "{\"taskId\":"
+        char part2[] = ",\"status\":\""
+        char part3[] = "\",\"result\":"
+        char part4[] = "}"
+        
+        char response[] = new char[](part1, taskIdStr, part2, statusStr, part3, resultVal, part4)
+        
+        return buildJSONResponse(200, "OK", response)
+    }
+    
+    Response handleGetStats(HTTPMessage request) {
+        int totalTasks = 0
+        int pendingTasks = 0
+        int processingTasks = 0
+        int completedTasks = 0
+        
+        mutex(lock) {
+            totalTasks = tasks.arrayLength
+            pendingTasks = taskQueue.arrayLength
+            
+            for (int i = 0; i < tasks.arrayLength; i++) {
+                if (tasks[i].status == "processing") {
+                    processingTasks++
+                } else if (tasks[i].status == "completed") {
+                    completedTasks++
+                }
+            }
+        }
+        
+        StatsResponse respData = new StatsResponse(totalTasks, completedTasks, processingTasks, pendingTasks)
+        char response[] = je.jsonFromData(respData)
+        return buildJSONResponse(200, "OK", response)
+    }
+    
+    Task findTask(int taskId) {
+        for (int i = 0; i < tasks.arrayLength; i++) {
+            if (tasks[i].id == taskId) {
+                return tasks[i]
+            }
+        }
+        return null
+    }
+    
+    int[] removeFromQueue(int queue[], int index) {
+        int result[] = null
+        for (int i = 0; i < queue.arrayLength; i++) {
+            if (i != index) {
+                result = new int[](result, queue[i])
+            }
+        }
+        return result
+    }
+    
+    int extractTaskIdFromPath(char path[]) {
+        // Extract ID from /task/123/result
+        // First, remove query string if present
+        char cleanPath[] = path
+        int qmark = su.find(path, "?", 0)
+        if (qmark != StringUtil.NOT_FOUND) {
+            cleanPath = su.subString(path, 0, qmark)
+        }
+        
+        String parts[] = su.explode(cleanPath, "/")
+        // For /task/123/result, explode gives: ["task", "123", "result"]
+        // So the ID is at index 1, not 2
+        if (parts.arrayLength >= 3) {
+            char idStr[] = parts[1].string
+            if (su.isNumeric(idStr)) {
+                return iu.intFromString(idStr)
+            }
+        }
+        return INVALID_ID
+    }
+    
+    int extractResultIdFromPath(char path[]) {
+        // Extract ID from /result/123
+        // First, remove query string if present
+        char cleanPath[] = path
+        int qmark = su.find(path, "?", 0)
+        if (qmark != StringUtil.NOT_FOUND) {
+            cleanPath = su.subString(path, 0, qmark)
+        }
+        
+        String parts[] = su.explode(cleanPath, "/")
+        // For /result/123, explode gives: ["result", "123"]
+        // So the ID is at index 1, not 2
+        if (parts.arrayLength >= 2) {
+            char idStr[] = parts[1].string
+            if (su.isNumeric(idStr)) {
+                return iu.intFromString(idStr)
+            }
+        }
+        return INVALID_ID
+    }
+    
+    char[] extractQueryParam(char queryString[], char paramName[]) {
+        if (queryString == null || queryString.arrayLength == 0) {
+            return ""
+        }
+        
+        // Simple query param extraction: workerId=abc
+        String params[] = su.explode(queryString, "&")
+        for (int i = 0; i < params.arrayLength; i++) {
+            String kv[] = su.explode(params[i].string, "=")
+            if (kv.arrayLength == 2 && kv[0].string == paramName) {
+                return kv[1].string
+            }
+        }
+        return ""
+    }
+    
+    Response buildJSONResponse(int code, char status[], char content[]) {
+        return new Response(
+            code,
+            status,
+            HTTPUtil.SERVER_NAME,
+            content.arrayLength,
+            "application/json",
+            content
+        )
+    }
+    
+    Response buildEmptyResponse(int code, char status[]) {
+        return new Response(
+            code,
+            status,
+            HTTPUtil.SERVER_NAME,
+            0,
+            "application/json",
+            ""
+        )
+    }
+}
+

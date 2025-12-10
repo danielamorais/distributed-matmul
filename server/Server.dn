@@ -1,80 +1,43 @@
 uses server.MatmulController
+uses server.Server
+uses server.Coordinator
+uses server.StaticFileServer
 
 const char debugMSG[] = "[@Server]"
-const int SERVER_PORT = 8080
 
 component provides server.Server requires io.Output out, network.http.HTTPUtil httpUtil, data.IntUtil iu,
-    net.TCPServerSocket, net.TCPSocket, composition.Adapt adapter, composition.RecursiveLoader loader,
-    monitoring.ResponseTime rt, time.Timer timer, network.tcp.TCPUtil tcpUtil {
-    bool adaptation = false
+    composition.Adapt adapter, composition.RecursiveLoader loader,
+    monitoring.ResponseTime rt, time.Timer timer {
     MatmulController mc
+    Coordinator coordinator
+    StaticFileServer staticServer
     LoadedComponents matmul = loader.load("matmul/Matmul.o")
     LoadedComponents matmulProxy = loader.load("matmul/Matmul.proxy.o")
     LoadedComponents matmulController = loader.load("server/MatmulController.o")
+    LoadedComponents coordinatorComp = loader.load("server/CoordinatorController.o")
+    LoadedComponents staticServerComp = loader.load("server/StaticFileServerImpl.o")
     int lastResponseTime = 0
     Mutex lock = new Mutex()
+    bool adaptiveMode = false
 
-    void Server:scaleToProxy() {
-        TCPServerSocket host = new TCPServerSocket()
-
-        matmulController.mainComponent.wire("matmul.Matmul", matmul.mainComponent, "matmul.Matmul")
-        mc = new MatmulController() from matmulController.mainComponent
+    void Server:initialize(opt int requestedMode) {
+        // Initialize coordinator and static file server components
+        coordinator = new Coordinator() from coordinatorComp.mainComponent
+        staticServer = new StaticFileServer() from staticServerComp.mainComponent
+        staticServer.setBasePath("webserver")
         
-        // binding server socket
-		if (!host.bind(TCPServerSocket.ANY_ADDRESS, SERVER_PORT)) {
-			out.println("Error: failed to bind master socket")
-			return
-		}
+        int mode = Server.MODE_LOCAL
+        if(isset requestedMode) mode = requestedMode
 
-        out.println("\n$debugMSG - Server is up and running...")
-
-		// handling incoming requests
-		while (true) {
-			TCPSocket client = new TCPSocket()
-			if (client.accept(host)) handleScaleRequest(client)
-		}
-    }
-
-    void Server:initWithProxy() {
-        TCPServerSocket host = new TCPServerSocket()
-
-        matmulController.mainComponent.wire("matmul.Matmul", matmulProxy.mainComponent, "matmul.Matmul")
-        mc = new MatmulController() from matmulController.mainComponent
-        adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmulProxy.mainComponent)
+        if(mode == Server.MODE_PROXY) {
+            configureProxyMode()
+            adaptiveMode = false
+        } else {
+            configureLocalMode()
+            adaptiveMode = (mode == Server.MODE_ADAPTIVE)
+        }
         
-        // binding server socket
-		if (!host.bind(TCPServerSocket.ANY_ADDRESS, SERVER_PORT)) {
-			out.println("Error: failed to bind master socket")
-			return
-		}
-
-        out.println("\n$debugMSG - Server is up and running...")
-
-		// handling incoming requests
-		while (true) {
-			TCPSocket client = new TCPSocket()
-			if (client.accept(host)) asynch::handleRequest(client)
-		}
-    }
-
-    void Server:init() {
-        TCPServerSocket host = new TCPServerSocket()
-        
-        // binding server socket
-		if (!host.bind(TCPServerSocket.ANY_ADDRESS, SERVER_PORT)) {
-			out.println("Error: failed to bind master socket")
-			return
-		}
-
-        out.println("\n$debugMSG - Server is up and running...")
-
-        matmulController.mainComponent.wire("matmul.Matmul", matmul.mainComponent, "matmul.Matmul")
-        mc = new MatmulController() from matmulController.mainComponent
-
-		while (true) {
-			TCPSocket client = new TCPSocket()
-            if(client.accept(host)) asynch::handleRequest(client)
-		}
+        out.println("$debugMSG - Server initialized with coordinator and static file serving")
     }
 
     void Server:adaptRepository(opt bool useProxy) {
@@ -82,32 +45,45 @@ component provides server.Server requires io.Output out, network.http.HTTPUtil h
         if(isset useProxy && useProxy) adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmulProxy.mainComponent)
         else adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmul.mainComponent)
         rt.markFinishTime()
-        // out.println("[SERVER] - adaptation time: $(iu.makeString(rt.getResult()))")
         rt.clearTime()
     }
 
-    void Server:handleRequest(store TCPSocket client) {
-        HTTPMessage msg = httpUtil.readHTTPRequest(client)
-        process(msg)
+    char[] Server:handleRequest(char httpRequestBuf[]) {
+        if(adaptiveMode) return handleAdaptiveRequest(httpRequestBuf)
+        HTTPMessage msg = httpUtil.readHTTPRequest(httpRequestBuf)
+        return process(msg)
     }
 
-    void handleScaleRequest(store TCPSocket client) {
-        HTTPMessage msg = httpUtil.readHTTPRequest(client)
+    char[] handleAdaptiveRequest(char httpRequestBuf[]) {
+        HTTPMessage msg = httpUtil.readHTTPRequest(httpRequestBuf)
         rt.markStartTime()
-        process(msg)
+        char response[] = process(msg)
         rt.markFinishTime()
         if(rt.getResult() - lastResponseTime > 200) {
             mutex(lock) adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmulProxy.mainComponent)
         }
         lastResponseTime = rt.getResult()
         rt.clearTime()
+        return response
     }
     
-    void Server:process(HTTPMessage request) {
+    char[] Server:process(HTTPMessage request) {
         Response res = null
+        
+        // Try coordinator endpoints first (task queue, stats)
+        res = coordinator.handle(request)
+        if (res != null) return sendResponseWithHeaders(request, res)
+        
+        // Try matmul controller
         res = mc.handle(request)
-        if (res != null) sendResponse(request, res)
-        else sendResponse(request, build404(request))
+        if (res != null) return sendResponseWithHeaders(request, res)
+        
+        // Try static file server (HTML, JS, WASM, etc.)
+        res = staticServer.handle(request)
+        if (res != null) return sendResponseWithHeaders(request, res)
+        
+        // Nothing handled it, return 404
+        return sendResponseWithHeaders(request, build404(request))
     }
 
     Response build404(HTTPMessage request) {
@@ -121,23 +97,46 @@ component provides server.Server requires io.Output out, network.http.HTTPUtil h
         )
     }
 
-    void Server:sendResponse(HTTPMessage request, Response response) {
-        // out.println("$debugMSG - RESPONSE CONTENT")
-        request.socket.send("HTTP/1.1 $(iu.makeString(response.code)) $(response.status)\r\n")
-        // out.print("HTTP/1.1 $(iu.makeString(response.code)) $(response.status)\r\n")
-		request.socket.send("Server: $(response.serverName) \r\n")
-        // out.print("Server: $(response.serverName) \r\n")
-		request.socket.send("Content-Length: $(iu.makeString(response.contentLength))\r\n")
-        // out.print("Content-Length: $(iu.makeString(response.contentLength))\r\n")
-		request.socket.send("Connection: close\r\n")
-        // out.print("Connection: close\r\n")
-		request.socket.send("Content-Type: $(response.contentType)\r\n")
-        // out.print("Content-Type: $(response.contentType)\r\n")
-		request.socket.send("\r\n")
-        // out.print("\r\n")
-		request.socket.send(response.body)
-        // out.println(response.body)
-        // out.println("$debugMSG - END RESPONSE CONTENT")
+    char[] Server:sendResponse(HTTPMessage request, Response response) {
+        return httpUtil.buildHTTPResponse(
+            response.code,
+            response.status,
+            response.serverName,
+            response.contentLength,
+            response.contentType,
+            response.body
+        )
+    }
+    
+    char[] sendResponseWithHeaders(HTTPMessage request, Response response) {
+        // Build response with COOP/COEP headers for SharedArrayBuffer support
+        char res[] = "HTTP/1.1 $(iu.makeString(response.code)) $(response.status)\r\n"
+        res = new char[](res, "Server: $(response.serverName)\r\n")
+        res = new char[](res, "Content-Length: $(iu.makeString(response.contentLength))\r\n")
+        res = new char[](res, "Connection: close\r\n")
+        res = new char[](res, "Content-Type: $(response.contentType)\r\n")
+        
+        // Add COOP/COEP headers for SharedArrayBuffer support (required for browser workers)
+        res = new char[](res, "Cross-Origin-Opener-Policy: same-origin\r\n")
+        res = new char[](res, "Cross-Origin-Embedder-Policy: require-corp\r\n")
+        
+        res = new char[](res, "\r\n")
+        if (response.body != null && response.body.arrayLength > 0) {
+            res = new char[](res, response.body)
+        }
+        return res
     }
 
+    void configureLocalMode() {
+        out.println("\n$debugMSG - Server is up and running (local)...")
+        matmulController.mainComponent.wire("matmul.Matmul", matmul.mainComponent, "matmul.Matmul")
+        mc = new MatmulController() from matmulController.mainComponent
+    }
+
+    void configureProxyMode() {
+        matmulController.mainComponent.wire("matmul.Matmul", matmulProxy.mainComponent, "matmul.Matmul")
+        mc = new MatmulController() from matmulController.mainComponent
+        adapter.adaptRequiredInterface(matmulController.mainComponent, "matmul.Matmul", matmulProxy.mainComponent)
+        out.println("\n$debugMSG - Server is up and running (proxy)...")
+    }
 }

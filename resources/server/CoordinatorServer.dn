@@ -1,0 +1,8 @@
+uses server.Coordinator
+uses network.http.HTTPUtil
+uses server.StaticFileServer
+
+interface CoordinatorServer {
+    char[] handleRequest(HTTPMessage request, Coordinator coordinator, HTTPUtil httpUtil, opt StaticFileServer staticServer)
+}
+

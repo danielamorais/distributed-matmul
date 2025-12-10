@@ -1,0 +1,252 @@
+uses net.http.Header
+
+component provides BrowserWorkerLoop requires io.Output out, data.IntUtil iu, 
+    data.StringUtil su, net.http.HTTPRequest http, data.json.JSONParser jp,
+    data.json.JSONEncoder je, matmul.Matmul matmul {
+    
+    const char COORDINATOR_URL[] = "http://localhost:8080/task/next"
+    const int POLL_INTERVAL_LOOPS = 200
+    
+    char workerId[] = null
+    int loopCount = 0
+    int lastPollLoop = 0
+    
+    const char RESULT_URL_PREFIX[] = "http://localhost:8080/task/"
+    const char RESULT_URL_SUFFIX[] = "/result"
+    
+    HTTPResponse currentResponse = null
+    bool waitingForResponse = false
+    int currentTaskId = 0
+    char currentResult[] = null
+    int requestType = 0
+    int tasksCompleted = 0
+    
+    BrowserWorkerLoop:BrowserWorkerLoop() {
+        workerId = new char[]("worker-wasm-", iu.makeString(loopCount))
+        out.println("[@BrowserWorkerWASM] Worker ID: $(workerId)")
+        out.println("[@BrowserWorkerWASM] Will poll: $(COORDINATOR_URL)")
+    }
+    
+    bool BrowserWorkerLoop:loop() {
+        loopCount++
+        
+        if (waitingForResponse) {
+            if (currentResponse != null) {
+                handleResponse()
+                if (requestType == 0) {
+                    waitingForResponse = false
+                    currentResponse = null
+                } else {
+                    currentResponse = null
+                }
+            }
+            return true
+        }
+        
+        if (loopCount % 100 == 0) {
+            out.println("[@BrowserWorkerWASM] Loop count: $(iu.makeString(loopCount))")
+        }
+        
+        if (loopCount - lastPollLoop >= POLL_INTERVAL_LOOPS) {
+            lastPollLoop = loopCount
+            startPollRequest()
+        }
+        
+        return true
+    }
+    
+    void startPollRequest() {
+        if (waitingForResponse) return
+        
+        out.println("[@BrowserWorkerWASM] Polling for tasks...")
+        
+        char pollUrl[] = new char[](COORDINATOR_URL, "?workerId=", workerId)
+        
+        Header headers[] = new Header[](
+            new Header("Content-Type", "application/json")
+        )
+        
+        requestType = 1
+        waitingForResponse = true
+        
+        asynch::executePollRequest(pollUrl, headers)
+    }
+    
+    void executePollRequest(char url[], Header headers[]) {
+        currentResponse = http.get(url, headers, false)
+    }
+    
+    void handlePollResponse() {
+        if (currentResponse == null) {
+            out.println("[@BrowserWorkerWASM] No response from coordinator")
+            return
+        }
+        
+        if (currentResponse.responseCode == "204") {
+            return
+        }
+        
+        if (currentResponse.responseCode != "200") {
+            out.println("[@BrowserWorkerWASM] Error response: $(currentResponse.responseCode)")
+            return
+        }
+        
+        if (currentResponse.content == null || currentResponse.content.arrayLength == 0) {
+            out.println("[@BrowserWorkerWASM] Empty response body")
+            return
+        }
+        
+        char responseBody[] = new char[currentResponse.content.arrayLength]
+        for (int i = 0; i < currentResponse.content.arrayLength; i++) {
+            responseBody[i] = currentResponse.content[i]
+        }
+        
+        JSONElement root = jp.parseDocument(responseBody)
+        if (root == null) {
+            out.println("[@BrowserWorkerWASM] Failed to parse task response")
+            return
+        }
+        
+        JSONElement taskIdElem = jp.getValue(root, "taskId")
+        if (taskIdElem == null || taskIdElem.type != JSONElement.TYPE_NUMBER) {
+            out.println("[@BrowserWorkerWASM] Missing or invalid taskId")
+            return
+        }
+        int taskId = iu.intFromString(taskIdElem.value)
+        
+        JSONElement dataElem = jp.getValue(root, "data")
+        if (dataElem == null || dataElem.type != JSONElement.TYPE_OBJECT) {
+            out.println("[@BrowserWorkerWASM] Missing or invalid data field")
+            return
+        }
+        
+        JSONElement aElem = jp.getValue(dataElem, "A")
+        JSONElement bElem = jp.getValue(dataElem, "B")
+        
+        if (aElem == null || bElem == null || 
+            aElem.type != JSONElement.TYPE_STRING || bElem.type != JSONElement.TYPE_STRING) {
+            out.println("[@BrowserWorkerWASM] Missing or invalid A/B fields")
+            return
+        }
+        
+        char dataA[] = aElem.value
+        char dataB[] = bElem.value
+        
+        out.println("[@BrowserWorkerWASM] Received task #$(iu.makeString(taskId))")
+        out.println("[@BrowserWorkerWASM] Matrix A: $(dataA)")
+        out.println("[@BrowserWorkerWASM] Matrix B: $(dataB)")
+        
+        char result[] = computeTask(taskId, dataA, dataB)
+        
+        if (result == null) {
+            out.println("[@BrowserWorkerWASM] Computation failed")
+            return
+        }
+        
+        out.println("[@BrowserWorkerWASM] Computation complete: $(result)")
+        
+        out.println("[@BrowserWorkerWASM] About to submit result for task #$(iu.makeString(taskId))")
+        currentTaskId = taskId
+        currentResult = result
+        
+        currentResponse = null
+        waitingForResponse = false
+        
+        out.println("[@BrowserWorkerWASM] Calling startSubmitRequest()...")
+        startSubmitRequest(taskId, result)
+        if (waitingForResponse) {
+            out.println("[@BrowserWorkerWASM] startSubmitRequest() called, waitingForResponse=true")
+        } else {
+            out.println("[@BrowserWorkerWASM] startSubmitRequest() called, waitingForResponse=false")
+        }
+    }
+    
+    void handleResponse() {
+        if (currentResponse == null) return
+        
+        int oldRequestType = requestType
+        
+        if (requestType == 1) {
+            handlePollResponse()
+        } else if (requestType == 2) {
+            handleSubmitResponse()
+        }
+        
+        if (requestType == oldRequestType) {
+            requestType = 0
+        }
+    }
+    
+    void startSubmitRequest(int taskId, char result[]) {
+        if (waitingForResponse) {
+            out.println("[@BrowserWorkerWASM] startSubmitRequest() early return: waitingForResponse=true")
+            return
+        }
+        
+        out.println("[@BrowserWorkerWASM] Submitting result for task #$(iu.makeString(taskId))")
+        
+        char resultUrl[] = new char[](RESULT_URL_PREFIX, iu.makeString(taskId), RESULT_URL_SUFFIX)
+        
+        ResultData resultData = new ResultData()
+        resultData.result = result
+        char jsonBody[] = je.jsonFromData(resultData)
+        
+        Header headers[] = new Header[](
+            new Header("Content-Type", "application/json")
+        )
+        
+        requestType = 2
+        waitingForResponse = true
+        
+        asynch::executeSubmitRequest(resultUrl, headers, jsonBody)
+    }
+    
+    void executeSubmitRequest(char url[], Header headers[], char postData[]) {
+        currentResponse = http.post(url, headers, postData, false)
+    }
+    
+    void handleSubmitResponse() {
+        if (currentResponse == null || currentResponse.responseCode != "200") {
+            out.println("[@BrowserWorkerWASM] Failed to submit result for task #$(iu.makeString(currentTaskId))")
+            return
+        }
+        
+        tasksCompleted++
+        out.println("[@BrowserWorkerWASM] Task #$(iu.makeString(currentTaskId)) completed successfully!")
+        out.println("[@BrowserWorkerWASM] Total tasks completed: $(iu.makeString(tasksCompleted))")
+    }
+    
+    char[] computeTask(int taskId, char dataA[], char dataB[]) {
+        if (dataA == null || dataB == null) {
+            out.println("[@BrowserWorkerWASM] Missing matrix data")
+            return null
+        }
+        
+        out.println("[@BrowserWorkerWASM] Computing: A=$(dataA), B=$(dataB)")
+        
+        Matrix A = matmul.charToMatrix(dataA)
+        Matrix B = matmul.charToMatrix(dataB)
+        
+        if (A == null || B == null) {
+            out.println("[@BrowserWorkerWASM] Failed to parse matrices")
+            return null
+        }
+        
+        Matrix result = matmul.multiply(A, B)
+        
+        if (result == null) {
+            out.println("[@BrowserWorkerWASM] Multiplication failed")
+            return null
+        }
+        
+        char resultStr[] = matmul.matrixToChar(result)
+        out.println("[@BrowserWorkerWASM] Result computed successfully")
+        
+        return resultStr
+    }
+}
+
+data ResultData {
+    char result[]
+}
+

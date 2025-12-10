@@ -1,41 +1,14 @@
-component provides App requires server.Server server, io.Input in, io.Output out, data.IntUtil iu {
-    void printOptions() {
-        out.println("Options:")
-        out.println("1 - use list")
-        out.println("2 - use proxy list")
-        out.println("3 - exit")
-        out.print("option> ")
-    }
-
-    void processOption(int option) {
-        if (option == 0) {
-            server.init()
-        } else if (option == 1) {
-            server.adaptRepository()
-        } else if (option == 2) {
-            server.adaptRepository(true)
-        } else {
-            out.println("Nao deu bom $option")
-        }
-    }
-    
+component provides App requires io.Output out, System system, MainAppLoop {
     int App:main(AppParam params[]) {
-        if(params.arrayLength > 0 && iu.intFromString(params[0].string) == 3) {
-            server.init()
-        } else if(params.arrayLength > 0 && iu.intFromString(params[0].string) == 2) {
-            server.scaleToProxy()
-        } else if(params.arrayLength > 0 && iu.intFromString(params[0].string) == 1) {
-            server.initWithProxy()
-        } else {
-            int instruction = 0
-            while(instruction != 3) {
-                asynch::processOption(instruction)
-                printOptions()
-                char userInput[] = in.readln()
-                instruction = iu.intFromString(userInput)
-            }
-        }
+        out.println("[MainApp] Initializing...")
+        out.println("[MainApp] About to create MainAppLoop instance...")
         
+        // Set ProcessLoop - Dana will automatically resolve MainAppLoopImpl
+        MainAppLoop loop = new MainAppLoop()
+        out.println("[MainApp] MainAppLoop instance created")
+        
+        system.setProcessLoop(loop)
+        out.println("[MainApp] ProcessLoop registered")
         return 0
     }
 }

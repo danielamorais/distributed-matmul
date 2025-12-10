@@ -1,2 +1,7 @@
 *.o
 __pycache__
+*node_modules*
+*file_system.js
+wasm_output/
+.cursor/
+webserver/

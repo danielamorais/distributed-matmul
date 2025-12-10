@@ -11,10 +11,12 @@ data Response {
 }
 
 interface Server extends Adapter {
-    void init()
-    void initWithProxy()
-    void scaleToProxy()
-    void process(HTTPMessage request)
-    void sendResponse(HTTPMessage request, Response response)
-    void handleRequest(store TCPSocket client)
+    const int MODE_PROXY = 1
+    const int MODE_ADAPTIVE = 2
+    const int MODE_LOCAL = 3
+
+    void initialize(opt int mode)
+    char[] process(HTTPMessage request)
+    char[] sendResponse(HTTPMessage request, Response response)
+    char[] handleRequest(char httpRequestBuf[])
 }

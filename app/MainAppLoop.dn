@@ -1,0 +1,451 @@
+uses net.http.Header
+uses matmul.Matmul
+uses ui.IOLayer
+uses ui.Window
+uses ui.TextArea
+uses ui.Button
+uses ui.Label
+
+component provides MainAppLoop requires io.Output out, data.IntUtil iu, 
+    data.json.JSONEncoder je, data.json.JSONParser jp, data.StringUtil su,
+    net.http.HTTPRequest http, time.Timer timer, ui.IOLayer, ui.Window, 
+    ui.TextArea, ui.Button, ui.Label, System system {
+    
+    const char MATMUL_URL[] = "http://localhost:8080/task"
+    const char RESULT_URL_PREFIX[] = "http://localhost:8080/result/"
+    const int POLL_INTERVAL_LOOPS = 50
+    
+    
+    IOLayer coreui
+    Window window
+    TextArea matrixAInput
+    TextArea matrixBInput
+    Button submitButton
+    Label statusLabel
+    Label resultLabel
+    
+    int state = 0
+    
+    HTTPResponse currentResponse = null
+    bool waitingForResponse = false
+    int currentTaskId = 0
+    int requestType = 0
+    int loopCount = 0
+    int lastPollLoop = 0
+    int resultReceivedLoop = 0
+    const int RESULT_DISPLAY_LOOPS = 200
+    
+    bool uiInitialized = false
+    bool iolayerInitialized = false
+    bool shouldExit = false
+    
+    MainAppLoop:MainAppLoop() {
+        out.println("[@MainAppWASM] Initializing MainAppLoop...")
+    }
+    
+    bool MainAppLoop:loop() {
+        loopCount++
+        
+        if (!iolayerInitialized) {
+            out.println("[@MainAppWASM] Initializing IOLayer in loop()...")
+            coreui = new IOLayer()
+            sinkevent SysEvents(coreui)
+            iolayerInitialized = true
+            out.println("[@MainAppWASM] IOLayer initialized, waiting for ready event...")
+            return true
+        }
+        
+        if (coreui != null) {
+            coreui.loop()
+        } else {
+            out.println("[@MainAppWASM] WARNING: coreui is null!")
+        }
+        
+        if (shouldExit) {
+            out.println("[@MainAppWASM] Exiting ProcessLoop")
+            return false
+        }
+        
+        if (!uiInitialized && loopCount > 10 && coreui != null) {
+            out.println("[@MainAppWASM] Fallback: Initializing UI after loop delay (loopCount=$(iu.makeString(loopCount)))")
+            initializeUI()
+        }
+        
+        if (loopCount % 50 == 0) {
+            char uiInitStr[]
+            if (uiInitialized)
+                uiInitStr = "true"
+                else
+                uiInitStr = "false"
+            char ioInitStr[]
+            if (iolayerInitialized)
+                ioInitStr = "true"
+                else
+                ioInitStr = "false"
+            out.println("[@MainAppWASM] Loop running: loopCount=$(iu.makeString(loopCount)), iolayerInitialized=$ioInitStr, uiInitialized=$uiInitStr")
+        }
+        
+        if (waitingForResponse) {
+            if (currentResponse != null) {
+                handleResponse()
+                waitingForResponse = false
+                currentResponse = null
+            }
+            return true
+        }
+        
+        if (state == 2) {
+            if (loopCount - lastPollLoop >= POLL_INTERVAL_LOOPS) {
+                lastPollLoop = loopCount
+                startPollRequest()
+            }
+        }
+        
+        if (state == 3) {
+            if (loopCount - resultReceivedLoop >= RESULT_DISPLAY_LOOPS) {
+                state = 0
+                statusLabel.setText("Ready")
+                submitButton.setDisabled(false)
+            }
+        }
+        
+        return true
+    }
+    
+    void initializeUI() {
+        out.println("[@MainAppWASM] Initializing UI...")
+        
+        window = new Window("Matrix Multiplication - Dana WASM")
+        out.println("[@MainAppWASM] Window created")
+        window.setSize(800, 600)
+        out.println("[@MainAppWASM] Window size set to 800x600")
+        window.setVisible(true)
+        out.println("[@MainAppWASM] Window set to visible")
+        
+        uiInitialized = true
+        
+        
+        matrixAInput = new TextArea()
+        matrixAInput.setPosition(20, 50)
+        matrixAInput.setSize(350, 200)
+        matrixAInput.setText("[[1,2],[3,4]]")
+        window.addObject(matrixAInput)
+        
+        matrixBInput = new TextArea()
+        matrixBInput.setPosition(430, 50)
+        matrixBInput.setSize(350, 200)
+        matrixBInput.setText("[[5,6],[7,8]]")
+        window.addObject(matrixBInput)
+        
+        submitButton = new Button("Submit")
+        submitButton.setPosition(350, 270)
+        window.addObject(submitButton)
+        
+        statusLabel = new Label("Ready")
+        statusLabel.setPosition(20, 320)
+        window.addObject(statusLabel)
+        
+        resultLabel = new Label("Result will appear here...")
+        resultLabel.setPosition(20, 360)
+        window.addObject(resultLabel)
+        
+        sinkevent AppEvents(submitButton)
+        sinkevent SysEvents(window)
+        sinkevent SysEvents(coreui)
+        
+        out.println("[@MainAppWASM] UI initialized - window and controls created")
+    }
+    
+    eventsink AppEvents(EventData ed) {
+        if (ed.type == Button.[click] && ed.source === submitButton) {
+            if (state == 0) {
+                startSubmitRequest()
+            }
+        }
+    }
+    
+    eventsink SysEvents(EventData ed) {
+        if (ed.source === coreui && ed.type == IOLayer.[ready]) {
+            out.println("[@MainAppWASM] IOLayer ready event received!")
+            if (!uiInitialized) {
+                initializeUI()
+            }
+        } else if (ed.source === window && ed.type == Window.[close]) {
+            out.println("[@MainAppWASM] Window closed - setting exit flag")
+            shouldExit = true
+            if (window != null) {
+                window.close()
+            }
+            if (coreui != null) {
+                coreui.shutdown()
+            }
+        }
+    }
+    
+    void startSubmitRequest() {
+        if (waitingForResponse || state != 0) return
+        
+        out.println("[@MainAppWASM] Starting submit request...")
+        
+        char matrixAText[] = matrixAInput.getText()
+        char matrixBText[] = matrixBInput.getText()
+        
+        if (matrixAText == null || matrixAText.arrayLength == 0 ||
+            matrixBText == null || matrixBText.arrayLength == 0) {
+            statusLabel.setText("Error: Please enter both matrices")
+            return
+        }
+        
+        MultiplyParamsFormat requestData = new MultiplyParamsFormat(matrixAText, matrixBText)
+        char jsonBody[] = je.jsonFromData(requestData)
+        
+        Header headers[] = new Header[](
+            new Header("Content-Type", "application/json")
+        )
+        
+        state = 1
+        statusLabel.setText("Submitting task...")
+        submitButton.setDisabled(true)
+        
+        requestType = 1
+        waitingForResponse = true
+        
+        asynch::executeSubmitRequest(MATMUL_URL, headers, jsonBody)
+    }
+    
+    void executeSubmitRequest(char url[], Header headers[], char postData[]) {
+        currentResponse = http.post(url, headers, postData, false)
+    }
+    
+    void startPollRequest() {
+        if (waitingForResponse || state != 2) return
+        
+        out.println("[@MainAppWASM] Polling for result for task #$(iu.makeString(currentTaskId))...")
+        
+        char pollUrl[] = new char[](RESULT_URL_PREFIX, iu.makeString(currentTaskId))
+        
+        Header headers[] = new Header[](
+            new Header("Content-Type", "application/json")
+        )
+        
+        requestType = 2
+        waitingForResponse = true
+        
+        asynch::executePollRequest(pollUrl, headers)
+    }
+    
+    void executePollRequest(char url[], Header headers[]) {
+        out.println("[@MainAppWASM] Executing HTTP GET request to: $(url)")
+        currentResponse = http.get(url, headers, false)
+        if (currentResponse == null) {
+            out.println("[@MainAppWASM] HTTP GET returned null response")
+        } else {
+            if (currentResponse.responseCode == null || currentResponse.responseCode.arrayLength == 0) {
+                out.println("[@MainAppWASM] HTTP GET returned response with no responseCode")
+                if (currentResponse.responseMessage != null) {
+                    out.println("[@MainAppWASM] Response message: $(currentResponse.responseMessage)")
+                }
+                if (currentResponse.content != null) {
+                    out.println("[@MainAppWASM] Response has content, length: $(iu.makeString(currentResponse.content.arrayLength))")
+                }
+                if (currentResponse.url != null) {
+                    out.println("[@MainAppWASM] Response URL: $(currentResponse.url)")
+                }
+            } else {
+                out.println("[@MainAppWASM] HTTP GET returned response code: $(currentResponse.responseCode)")
+            }
+        }
+    }
+    
+    void handleResponse() {
+        if (currentResponse == null) {
+            out.println("[@MainAppWASM] No response received")
+            state = 0
+            statusLabel.setText("Error: No response from server")
+            submitButton.setDisabled(true)
+            return
+        }
+        
+        if (requestType == 1) {
+            handleSubmitResponse()
+        } else if (requestType == 2) {
+            handlePollResponse()
+        }
+        
+        requestType = 0
+    }
+    
+    void handleSubmitResponse() {
+        if (currentResponse.responseCode != "200") {
+            out.println("[@MainAppWASM] Submit failed with code: $(currentResponse.responseCode)")
+            state = 0
+            char errorMsg[] = new char[]("Error: Submit failed (", currentResponse.responseCode, ")")
+            statusLabel.setText(errorMsg)
+            submitButton.setDisabled(true)
+            return
+        }
+        
+        if (currentResponse.content == null || currentResponse.content.arrayLength == 0) {
+            out.println("[@MainAppWASM] Empty response body from submit")
+            state = 0
+            statusLabel.setText("Error: Empty response")
+            submitButton.setDisabled(true)
+            return
+        }
+        
+        char responseBody[] = new char[currentResponse.content.arrayLength]
+        for (int i = 0; i < currentResponse.content.arrayLength; i++) {
+            responseBody[i] = currentResponse.content[i]
+        }
+        
+        JSONElement root = jp.parseDocument(responseBody)
+        if (root == null) {
+            out.println("[@MainAppWASM] Failed to parse submit response")
+            state = 0
+            statusLabel.setText("Error: Failed to parse response")
+            submitButton.setDisabled(true)
+            return
+        }
+        
+        JSONElement taskIdElem = jp.getValue(root, "taskId")
+        if (taskIdElem == null || taskIdElem.type != JSONElement.TYPE_NUMBER) {
+            out.println("[@MainAppWASM] Missing or invalid taskId in response")
+            state = 0
+            statusLabel.setText("Error: Invalid response format")
+            submitButton.setDisabled(true)
+            return
+        }
+        
+        currentTaskId = iu.intFromString(taskIdElem.value)
+        out.println("[@MainAppWASM] Task submitted successfully, taskId: $(iu.makeString(currentTaskId))")
+        
+        state = 2
+        char statusMsg[] = new char[]("Task submitted (ID: ", iu.makeString(currentTaskId), "). Polling for result...")
+        statusLabel.setText(statusMsg)
+        lastPollLoop = loopCount
+    }
+    
+    void handlePollResponse() {
+        if (currentResponse == null) {
+            out.println("[@MainAppWASM] Poll response is null, will retry polling...")
+            return
+        }
+        
+        if (currentResponse.responseCode == null || currentResponse.responseCode.arrayLength == 0) {
+            if (currentResponse.content != null && currentResponse.content.arrayLength > 0) {
+                out.println("[@MainAppWASM] Response has content but no responseCode - assuming 200 OK, processing result")
+                currentResponse.responseCode = "200"
+            } else {
+                out.println("[@MainAppWASM] No content and no responseCode - assuming 204 (not ready), will continue polling")
+                return
+            }
+        }
+        
+        if (currentResponse.responseCode == "204" || currentResponse.responseCode == "404") {
+            out.println("[@MainAppWASM] Result not ready yet (code: $(currentResponse.responseCode)), continuing to poll...")
+            return
+        }
+        
+        if (currentResponse.responseCode != "200") {
+            out.println("[@MainAppWASM] Poll failed with code: $(currentResponse.responseCode)")
+            state = 0
+            char errorMsg[] = new char[]("Error: Poll failed (", currentResponse.responseCode, ")")
+            statusLabel.setText(errorMsg)
+            submitButton.setDisabled(true)
+            return
+        }
+        
+        if (currentResponse.content == null || currentResponse.content.arrayLength == 0) {
+            out.println("[@MainAppWASM] Empty response body from poll")
+            return
+        }
+        
+        char responseBody[] = null
+        if (currentResponse.content != null && currentResponse.content.arrayLength > 0) {
+            responseBody = new char[currentResponse.content.arrayLength]
+            for (int i = 0; i < currentResponse.content.arrayLength; i++) {
+                responseBody[i] = currentResponse.content[i]
+            }
+        }
+        
+        if (responseBody == null || responseBody.arrayLength == 0) {
+            out.println("[@MainAppWASM] Invalid response body, continuing to poll...")
+            return
+        }
+        
+        JSONElement root = jp.parseDocument(responseBody)
+        
+        if (root == null) {
+            out.println("[@MainAppWASM] Failed to parse poll response or empty response body")
+            return
+        }
+        
+        JSONElement statusElem = null
+        if (root != null) {
+            statusElem = jp.getValue(root, "status")
+        }
+        
+        if (statusElem != null && statusElem.type == JSONElement.TYPE_STRING && statusElem.value != null) {
+            char status[] = statusElem.value
+            if (status == "pending" || status == "processing") {
+                out.println("[@MainAppWASM] Task status: $(status), continuing to poll...")
+                return
+            }
+        }
+        
+        JSONElement resultElem = null
+        if (root != null) {
+            resultElem = jp.getValue(root, "result")
+        }
+        
+        if (resultElem == null) {
+            out.println("[@MainAppWASM] No result field in response, continuing to poll...")
+            return
+        }
+        
+        char resultText[] = null
+        if (resultElem.type == JSONElement.TYPE_STRING) {
+            if (resultElem.value != null) {
+                resultText = resultElem.value
+                if (resultText.arrayLength == 0 || resultText == "\"\"") {
+                    out.println("[@MainAppWASM] Result is empty, continuing to poll...")
+                    return
+                }
+            } else {
+                out.println("[@MainAppWASM] Result value is null, continuing to poll...")
+                return
+            }
+        } else if (resultElem.type == JSONElement.TYPE_OBJECT) {
+            JSONElement innerResult = jp.getValue(resultElem, "result")
+            if (innerResult != null && innerResult.type == JSONElement.TYPE_STRING && innerResult.value != null) {
+                resultText = innerResult.value
+            } else {
+                out.println("[@MainAppWASM] Nested result object has unexpected format, continuing to poll...")
+                return
+            }
+        } else if (resultElem.type == JSONElement.TYPE_ARRAY) {
+            if (resultElem != null) {
+                resultText = je.jsonFromData(resultElem)
+            }
+        } else {
+            out.println("[@MainAppWASM] Result has unexpected type: $(iu.makeString(resultElem.type)), continuing to poll...")
+            return
+        }
+        
+        if (resultText == null || resultText.arrayLength == 0) {
+            out.println("[@MainAppWASM] Result text is null or empty, continuing to poll...")
+            return
+        }
+        
+        char resultDisplay[] = new char[]("Result: ", resultText)
+        resultLabel.setText(resultDisplay)
+        statusLabel.setText("Computation complete!")
+        
+        out.println("[@MainAppWASM] Result received: $(resultText)")
+        
+        state = 3
+        resultReceivedLoop = loopCount
+        submitButton.setDisabled(true)
+    }
+}
+

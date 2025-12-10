@@ -1,17 +1,220 @@
-const int DEFAULT_DIST_PORT = 8081
+uses server.Remote
+uses network.http.HTTPUtil
 
-component provides App requires data.IntUtil iu, server.Remote:matmul service {
-    int portDist = 0
-
+component provides App requires data.IntUtil iu, io.Output out, server.Remote:matmul service,
+    network.http.HTTPUtil httpUtil, net.TCPServerSocket, net.TCPSocket, io.Input {
+    
+    const char debugMSG[] = "[@RemoteRepo]"
+    const int DEFAULT_PORT = 8081
+    
     int App:main(AppParam params[]) {
-        if (params.arrayLength == 2) {
-			portDist = iu.intFromString(params[0].string)
-		} else {
-			portDist = DEFAULT_DIST_PORT
-		} 
-		
-		service.start(portDist)
-
+        int port = DEFAULT_PORT
+        if (params.arrayLength > 0) {
+            port = iu.intFromString(params[0].string)
+        }
+        
+        out.println("$debugMSG - Starting HTTP server on port $(iu.makeString(port))")
+        
+        TCPServerSocket host = new TCPServerSocket()
+        if (!host.bind(TCPServerSocket.ANY_ADDRESS, port)) {
+            out.println("$debugMSG - Error: failed to bind to port $(iu.makeString(port))")
+            return 1
+        }
+        
+        out.println("$debugMSG - HTTP server listening on port $(iu.makeString(port))")
+        
+        while (true) {
+            TCPSocket client = new TCPSocket()
+            if (client.accept(host)) {
+                asynch::handleHTTPRequest(client)
+            }
+        }
+        
         return 0
+    }
+    
+    void handleHTTPRequest(TCPSocket client) {
+        char requestBuffer[] = readHTTPRequest(client)
+        if (requestBuffer == null || requestBuffer.arrayLength == 0) {
+            out.println("$debugMSG - Warning: received empty HTTP payload, closing connection.")
+            client.disconnect()
+            return
+        }
+        
+        out.println("$debugMSG - Received $(iu.makeString(requestBuffer.arrayLength)) bytes from client.")
+        
+        if (httpUtil == null) {
+            out.println("$debugMSG - Error: HTTPUtil dependency missing, cannot parse request.")
+            client.disconnect()
+            return
+        }
+        
+        HTTPMessage httpRequest = httpUtil.readHTTPRequest(requestBuffer)
+        if (httpRequest == null) {
+            out.println("$debugMSG - Error: HTTP parser returned null message.")
+            client.disconnect()
+            return
+        }
+        
+        if (service == null) {
+            out.println("$debugMSG - Error: server.Remote:matmul service not injected.")
+            client.disconnect()
+            return
+        }
+        
+        if (httpRequest.postData == null || httpRequest.postData.arrayLength == 0) {
+            out.println("$debugMSG - Warning: HTTP request missing POST body.")
+        } else {
+            out.println("$debugMSG - POST body ($(iu.makeString(httpRequest.postData.arrayLength)) bytes)")
+        }
+        
+        char httpResponse[] = service.processHTTPRequest(httpRequest)
+        if (httpResponse == null || httpResponse.arrayLength == 0) {
+            out.println("$debugMSG - Warning: remote service returned empty response.")
+            client.disconnect()
+            return
+        }
+        
+        out.println("$debugMSG - Sending response ($(iu.makeString(httpResponse.arrayLength)) bytes)")
+        
+        // Debug: print first 100 chars of HTTP response
+        char debugResp[] = "HTTP Response start: "
+        int debugLen = 100
+        if (httpResponse.arrayLength < debugLen) debugLen = httpResponse.arrayLength
+        for (int di = 0; di < debugLen; di++) {
+            debugResp = new char[](debugResp, httpResponse[di])
+        }
+        out.println("$debugMSG - $(debugResp)")
+        
+        int sentBytes = client.send(httpResponse)
+        out.println("$debugMSG - Sent $(iu.makeString(sentBytes)) bytes to client (expected $(iu.makeString(httpResponse.arrayLength)))")
+        
+        // Verify all data was sent
+        if (sentBytes < httpResponse.arrayLength) {
+            out.println("$debugMSG - Warning: Only $(iu.makeString(sentBytes)) of $(iu.makeString(httpResponse.arrayLength)) bytes were sent")
+        }
+        
+        // Ensure all data is flushed before closing connection
+        flushSocket(client)
+        
+        client.disconnect()
+        out.println("$debugMSG - Connection closed")
+    }
+    
+    char[] readHTTPRequest(TCPSocket client) {
+        // Try to receive all available data at once
+        // TCPSocket has a recv() method that takes a size parameter
+        char buffer[] = new char[8192]
+        char received[] = client.recv(8192)
+        
+        if (received == null || received.arrayLength == 0) {
+            return null
+        }
+        
+        // Copy received data to buffer
+        int totalRead = received.arrayLength
+        if (totalRead > buffer.arrayLength) {
+            totalRead = buffer.arrayLength
+        }
+        
+        for (int i = 0; i < totalRead; i++) {
+            buffer[i] = received[i]
+        }
+        
+        // Parse Content-Length to see if we need to read more
+        HTTPMessage tempMsg = httpUtil.readHTTPRequest(buffer)
+        int contentLength = tempMsg.contentLength
+        int headerEnd = 0
+        
+        // Find end of headers
+        for (int i = 0; i < buffer.arrayLength - 3; i++) {
+            if (buffer[i] == "\r" && buffer[i+1] == "\n" && buffer[i+2] == "\r" && buffer[i+3] == "\n") {
+                headerEnd = i + 4
+                break
+            }
+        }
+        
+        // If we need more data for the body, receive it
+        if (contentLength > 0 && headerEnd > 0) {
+            int bodyReceived = totalRead - headerEnd
+            if (bodyReceived < contentLength) {
+                int remaining = contentLength - bodyReceived
+                char bodyChunk[] = client.recv(remaining)
+                if (bodyChunk != null && bodyChunk.arrayLength > 0) {
+                    // Append body data
+                    int newTotal = totalRead + bodyChunk.arrayLength
+                    if (newTotal <= buffer.arrayLength) {
+                        for (int i = 0; i < bodyChunk.arrayLength; i++) {
+                            buffer[totalRead + i] = bodyChunk[i]
+                        }
+                        totalRead = newTotal
+                    }
+                }
+            }
+        }
+        
+        if (totalRead == 0) return null
+        
+        char result[] = new char[totalRead]
+        for (int i = 0; i < totalRead; i++) {
+            result[i] = buffer[i]
+        }
+        
+        return result
+    }
+    
+    void flushSocket(TCPSocket client) {
+        out.println("$debugMSG - flushSocket() called")
+        
+        // Verify socket is still connected before attempting to flush
+        if (!client.connected()) {
+            out.println("$debugMSG - Warning: Socket not connected, skipping flush")
+            return
+        }
+        
+        out.println("$debugMSG - Socket is connected, checking for unsent bytes...")
+        
+        // Check if there's unsent data in Dana's internal buffer
+        int unsentBytes = client.getBufferUnsent()
+        out.println("$debugMSG - Unsent bytes in buffer: $(iu.makeString(unsentBytes))")
+        
+        if (unsentBytes > 0) {
+            out.println("$debugMSG - Flushing $(iu.makeString(unsentBytes)) unsent bytes from buffer")
+            int flushedBytes = client.sendBuffer()
+            out.println("$debugMSG - Flushed $(iu.makeString(flushedBytes)) bytes")
+            
+            // Retry flushing if there's still data
+            int retries = 0
+            const int MAX_FLUSH_RETRIES = 10
+            while (client.connected() && client.getBufferUnsent() > 0 && retries < MAX_FLUSH_RETRIES) {
+                flushedBytes = client.sendBuffer()
+                retries = retries + 1
+                // Small delay to allow OS to process the send
+                int dummy = 0
+                for (int delay = 0; delay < 100000; delay++) {
+                    dummy = dummy + 1
+                }
+            }
+            
+            if (client.getBufferUnsent() > 0) {
+                out.println("$debugMSG - Warning: $(iu.makeString(client.getBufferUnsent())) bytes still in buffer after flush")
+            }
+        } else {
+            out.println("$debugMSG - No unsent bytes in Dana buffer (socket may be in blocking mode)")
+        }
+        
+        // Critical: Delay to ensure OS-level TCP send buffers are flushed
+        // In blocking mode, send() returns after writing to OS buffer, but the OS
+        // may not have actually transmitted the data yet. disconnect() closes the
+        // socket immediately, which can cause the OS to drop buffered data.
+        // This delay gives the OS time to actually transmit the data over the network.
+        // Note: This is a workaround for Dana's TCP implementation limitation.
+        out.println("$debugMSG - Waiting for OS-level TCP buffer flush...")
+        int dummy = 0
+        // Increased delay to 5 seconds (5000000 iterations) to allow OS to flush buffers
+        for (int delay = 0; delay < 5000000; delay++) {
+            dummy = dummy + 1
+        }
+        out.println("$debugMSG - Flush delay complete")
     }
 }

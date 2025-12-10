@@ -1,0 +1,13 @@
+component provides App requires io.Output out, System system, BrowserWorkerLoop {
+    
+    int App:main(AppParam params[]) {
+        out.println("[@BrowserWorkerWASM] Initializing...")
+        
+        // Set ProcessLoop - Dana will automatically resolve BrowserWorkerLoop
+        system.setProcessLoop(new BrowserWorkerLoop())
+        
+        out.println("[@BrowserWorkerWASM] ProcessLoop registered")
+        return 0
+    }
+}
+

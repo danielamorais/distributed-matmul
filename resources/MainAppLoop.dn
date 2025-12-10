@@ -1,0 +1,4 @@
+interface MainAppLoop extends lang.ProcessLoop {
+    MainAppLoop()
+}
+

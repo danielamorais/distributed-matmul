@@ -1,5 +1,3 @@
-uses net.TCPSocket
-
 data CacheMessage {
     int maxAge
     char ifNoneMatch[]
@@ -31,16 +29,14 @@ data HTTPMessage {
 	int sleepTime
 	bool resourceExists
 	CacheMessage cacheMessage
-	TCPSocket socket
 }
 
 interface HTTPUtil {
 	const char htdocs[] = "../repository/htdocs"
 	const int BUFF_SIZE = 1000
 	const char SERVER_NAME[] = "Dana Web Platform"
-	HTTPMessage readHeader(store TCPSocket s)
-	HTTPMessage getMessage(HTTPMessage header)
-	HTTPMessage readHTTPRequest(store TCPSocket s)
+	HTTPMessage readHTTPRequest(char buf[])
 	HTTPMessage parseHTTPRequest(char buf[])
+	char[] buildHTTPResponse(int code, char status[], char serverName[], int contentLength, char contentType[], char body[])
 }
 
