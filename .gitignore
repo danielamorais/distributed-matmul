@@ -5,3 +5,4 @@ __pycache__
 wasm_output/
 .cursor/
 webserver/
+.venv/
