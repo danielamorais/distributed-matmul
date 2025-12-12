@@ -200,18 +200,29 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
             return buildJSONResponse(400, "Bad Request", error)
         }
         
-        Task task = null
+        // Copy task data INSIDE mutex to avoid race conditions with result submission
+        // This ensures each client gets a consistent snapshot of the task state
+        char resultValue[] = null
+        char statusStr[] = null
+        int taskIdForResponse = 0
+        bool taskFound = false
+        
         mutex(lock) {
-            task = findTask(taskId)
+            Task task = findTask(taskId)
+            if (task != null) {
+                taskFound = true
+                taskIdForResponse = task.id
+                statusStr = task.status
+                resultValue = task.result
+            }
         }
         
-        if (task == null) {
+        if (!taskFound) {
             char error[] = "{\"error\":\"Task not found\"}"
             return buildJSONResponse(404, "Not Found", error)
         }
         
-        char resultValue[] = task.result
-        
+        // Process result value outside mutex (using local copy)
         if (resultValue != null && resultValue.arrayLength > 0) {
             if (su.startsWith(resultValue, "{\"") || su.startsWith(resultValue, "{'")) {
                 JSONElement root = jp.parseDocument(resultValue)
@@ -224,8 +235,7 @@ component provides server.Coordinator requires io.Output out, data.IntUtil iu,
             }
         }
         
-        char taskIdStr[] = iu.makeString(task.id)
-        char statusStr[] = task.status
+        char taskIdStr[] = iu.makeString(taskIdForResponse)
         
         char resultVal[] = null
         if (resultValue != null && resultValue.arrayLength > 0) {
